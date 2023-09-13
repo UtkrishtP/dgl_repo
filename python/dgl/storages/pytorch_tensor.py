@@ -1,13 +1,15 @@
 """Feature storages for PyTorch tensors."""
 
 import torch
+from timeit import default_timer as timer
 
 from ..utils import gather_pinned_tensor_rows
 from .base import register_storage_wrapper
 from .tensor import BaseTensorStorage
 
-
+scatter_gather = 0
 def _fetch_cpu(indices, tensor, feature_shape, device, pin_memory, **kwargs):
+    start = timer()
     result = torch.empty(
         indices.shape[0],
         *feature_shape,
@@ -15,11 +17,22 @@ def _fetch_cpu(indices, tensor, feature_shape, device, pin_memory, **kwargs):
         pin_memory=pin_memory,
     )
     torch.index_select(tensor, 0, indices, out=result)
+    end = timer()
+    global scatter_gather
+    scatter_gather = scatter_gather + end - start
+    
     kwargs["non_blocking"] = pin_memory
     result = result.to(device, **kwargs)
     return result
 
+# Adding getter and setter methods
+def _scatter_gather():
+    return scatter_gather
 
+def set_zero():
+    global scatter_gather
+    scatter_gather = 0
+    
 def _fetch_cuda(indices, tensor, device, **kwargs):
     return torch.index_select(tensor, 0, indices).to(device, **kwargs)
 
@@ -32,6 +45,7 @@ class PyTorchTensorStorage(BaseTensorStorage):
         device = torch.device(device)
         storage_device_type = self.storage.device.type
         indices_device_type = indices.device.type
+
         if storage_device_type != "cuda":
             if indices_device_type == "cuda":
                 if self.storage.is_pinned():

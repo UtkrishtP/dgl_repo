@@ -2,6 +2,7 @@
 from .. import backend as F
 from .base import *
 from .numpy import *
+from .pytorch_tensor import *
 
 # Defines the name TensorStorage
 if F.get_preferred_backend() == "pytorch":

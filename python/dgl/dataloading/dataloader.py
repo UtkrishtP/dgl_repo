@@ -37,7 +37,7 @@ from ..utils import (
     recursive_apply_pair,
     set_num_threads,
 )
-# from ..storages import scatter_gather_, set_zero
+from ..storages import _scatter_gather, set_zero
 from timeit import default_timer as timer
 
 PYTHON_EXIT_STATUS = False
@@ -738,7 +738,8 @@ class _PrefetchingIter(object):
             stream_event.wait()
         global pre_, sample_
         # self.dataloader.pre = pre_
-        # self.dataloader.scatter = scatter_gather_()
+        # Fetch the global variable using the getter function in pytorch_tensor.py
+        self.dataloader.scatter = _scatter_gather()
         return batch
 
 
@@ -970,7 +971,7 @@ class DataLoader(torch.utils.data.DataLoader):
         gpu_cache=None,
         pre=0,
         skip_mfg=0,
-        # scatter = 0,
+        scatter = 0,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1021,7 +1022,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self.indices = indices  # For PyTorch-Lightning
         self.skip_mfg = skip_mfg
         self.pre = 0
-        # self.scatter = 0
+        self.scatter = 0
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None
@@ -1194,9 +1195,11 @@ class DataLoader(torch.utils.data.DataLoader):
         num_threads = torch.get_num_threads() if self.num_workers > 0 else None
         global sample_, pre_
         sample_ = pre_ = 0
-
-        # if self.scatter == 0:
-        #     set_zero()
+        
+        # Reset the global var "scatter_gather" at start of a new epoch.
+        if self.scatter == 0:
+            set_zero()
+        
         return _PrefetchingIter(
             self, super().__iter__(), num_threads=num_threads
         )

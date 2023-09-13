@@ -13,12 +13,12 @@ torch>=1.7.0
 
 ```
 python preprocess.py \
-    --rootdir . \
-    --author-output-path ./author.npy \
-    --inst-output-path ./inst.npy \
-    --graph-output-path ./graph.dgl \
+    --rootdir /disk/dataset/ \
+    --author-output-path /disk/dataset/author.npy \
+    --inst-output-path /disk/dataset/inst.npy \
+    --graph-output-path /disk/dataset/graph.dgl \
     --graph-as-homogeneous \
-    --full-output-path ./full.npy
+    --full-output-path /disk/dataset/full.npy
 ```
 
 This will give you the following files:

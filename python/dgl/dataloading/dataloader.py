@@ -37,7 +37,7 @@ from ..utils import (
     recursive_apply_pair,
     set_num_threads,
 )
-from ..storages import _scatter_gather, set_zero
+from ..storages import scatter_gather_, set_zero
 from timeit import default_timer as timer
 
 PYTHON_EXIT_STATUS = False
@@ -516,7 +516,7 @@ def _prefetch(batch, dataloader, stream):
         '''
             Added a flag sample as part of dataloader member variables.
 
-            sample : '1', we skip sending the MFG to the GPU.
+            skip_mfg : '1', we skip sending the MFG to the GPU.
         '''
         if dataloader.skip_mfg == 1:
             batch = recursive_apply(
@@ -739,7 +739,7 @@ class _PrefetchingIter(object):
         global pre_, sample_
         # self.dataloader.pre = pre_
         # Fetch the global variable using the getter function in pytorch_tensor.py
-        self.dataloader.scatter = _scatter_gather()
+        self.dataloader.scatter = scatter_gather_()
         return batch
 
 

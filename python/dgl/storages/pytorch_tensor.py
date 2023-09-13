@@ -26,7 +26,7 @@ def _fetch_cpu(indices, tensor, feature_shape, device, pin_memory, **kwargs):
     return result
 
 # Adding getter and setter methods
-def _scatter_gather():
+def scatter_gather_():
     return scatter_gather
 
 def set_zero():

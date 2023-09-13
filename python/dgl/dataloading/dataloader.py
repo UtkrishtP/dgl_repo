@@ -37,6 +37,8 @@ from ..utils import (
     recursive_apply_pair,
     set_num_threads,
 )
+# from ..storages import scatter_gather_, set_zero
+from timeit import default_timer as timer
 
 PYTHON_EXIT_STATUS = False
 
@@ -483,6 +485,9 @@ def _record_stream(x, stream):
     else:
         return x
 
+# Global variable to keep track of prefetch and sampling timers.
+pre_ = 0
+sample_ = 0
 
 def _prefetch(batch, dataloader, stream):
     # feats has the same nested structure of batch, except that
@@ -499,17 +504,33 @@ def _prefetch(batch, dataloader, stream):
         current_stream.wait_stream(stream)
     else:
         current_stream = None
+    # start = timer()
+    # start = end = 0
     with torch.cuda.stream(stream):
         # fetch node/edge features
         feats = recursive_apply(batch, _prefetch_for, dataloader)
         feats = recursive_apply(feats, _await_or_return)
         feats = recursive_apply(feats, _record_stream, current_stream)
         # transfer input nodes/seed nodes/subgraphs
-        batch = recursive_apply(
-            batch, lambda x: x.to(dataloader.device, non_blocking=True)
-        )
-        batch = recursive_apply(batch, _record_stream, current_stream)
+
+        '''
+            Added a flag sample as part of dataloader member variables.
+
+            sample : '1', we skip sending the MFG to the GPU.
+        '''
+        if dataloader.skip_mfg == 1:
+            batch = recursive_apply(
+                batch, lambda x: x.to("cpu", non_blocking=True)
+            )
+        else:
+            batch = recursive_apply(
+                batch, lambda x: x.to(dataloader.device, non_blocking=True)
+            )
+            batch = recursive_apply(batch, _record_stream, current_stream)
     stream_event = stream.record_event() if stream is not None else None
+    # end = timer()
+    # global pre_
+    # pre_ = pre_ + end - start
     return batch, feats, stream_event
 
 
@@ -715,6 +736,9 @@ class _PrefetchingIter(object):
         batch = recursive_apply_pair(batch, feats, _assign_for)
         if stream_event is not None:
             stream_event.wait()
+        global pre_, sample_
+        # self.dataloader.pre = pre_
+        # self.dataloader.scatter = scatter_gather_()
         return batch
 
 
@@ -736,7 +760,13 @@ class CollateWrapper(object):
             # Only copy the indices to the given device if in UVA mode or the graph
             # is not on CPU.
             items = recursive_apply(items, lambda x: x.to(self.device))
+        
+        # Timer hooks added to measure sampling time, works only for [workers = 0] scenario
+        start = timer()
         batch = self.sample_func(self.g, items)
+        end = timer()
+        global sample_
+        sample_ = sample_ + end - start
         return recursive_apply(batch, remove_parent_storage_columns, self.g)
 
 
@@ -938,6 +968,9 @@ class DataLoader(torch.utils.data.DataLoader):
         pin_prefetcher=None,
         use_uva=False,
         gpu_cache=None,
+        pre=0,
+        skip_mfg=0,
+        # scatter = 0,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -986,6 +1019,9 @@ class DataLoader(torch.utils.data.DataLoader):
         # no matter what, but I doubt if it's reasonable.
         self.graph = graph
         self.indices = indices  # For PyTorch-Lightning
+        self.skip_mfg = skip_mfg
+        self.pre = 0
+        # self.scatter = 0
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None
@@ -1156,6 +1192,11 @@ class DataLoader(torch.utils.data.DataLoader):
         # When using multiprocessing PyTorch sometimes set the number of PyTorch threads to 1
         # when spawning new Python threads.  This drastically slows down pinning features.
         num_threads = torch.get_num_threads() if self.num_workers > 0 else None
+        global sample_, pre_
+        sample_ = pre_ = 0
+
+        # if self.scatter == 0:
+        #     set_zero()
         return _PrefetchingIter(
             self, super().__iter__(), num_threads=num_threads
         )

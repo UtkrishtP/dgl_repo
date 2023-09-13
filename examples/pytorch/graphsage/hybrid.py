@@ -203,7 +203,7 @@ def train(args, device, g, dataset, model, num_classes, f, use_uva, _pin, _alter
         pin_prefetcher = True,
         use_alternate_streams = True,
         persistent_workers=True,
-        # sample=1,
+        # skip_mfg=1,
     )
 
     cpu_dataloader_ = DataLoader(
@@ -219,7 +219,7 @@ def train(args, device, g, dataset, model, num_classes, f, use_uva, _pin, _alter
         pin_prefetcher = True,
         use_alternate_streams = True,
         persistent_workers=True,
-        sample=1,
+        skip_mfg=1,
     )
     
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)

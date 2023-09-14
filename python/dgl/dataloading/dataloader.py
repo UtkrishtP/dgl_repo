@@ -486,7 +486,8 @@ def _record_stream(x, stream):
         return x
 
 # Global variable to keep track of prefetch and sampling timers.
-pre_ = 0
+pre_nfeat = 0
+pre_mfg = 0
 sample_ = 0
 
 def _prefetch(batch, dataloader, stream):
@@ -504,13 +505,19 @@ def _prefetch(batch, dataloader, stream):
         current_stream.wait_stream(stream)
     else:
         current_stream = None
-    # start = timer()
-    # start = end = 0
+    '''
+        Add timers to measure prefetch time for nfeats/MFG's
+        We update the global variable pre_
+    '''
+    
+    start_ = end_ = start = end = 0
     with torch.cuda.stream(stream):
         # fetch node/edge features
+        start_ = timer()
         feats = recursive_apply(batch, _prefetch_for, dataloader)
         feats = recursive_apply(feats, _await_or_return)
         feats = recursive_apply(feats, _record_stream, current_stream)
+        end_ = timer()
         # transfer input nodes/seed nodes/subgraphs
 
         '''
@@ -518,6 +525,7 @@ def _prefetch(batch, dataloader, stream):
 
             skip_mfg : '1', we skip sending the MFG to the GPU.
         '''
+        start = timer()
         if dataloader.skip_mfg == 1:
             batch = recursive_apply(
                 batch, lambda x: x.to("cpu", non_blocking=True)
@@ -528,9 +536,11 @@ def _prefetch(batch, dataloader, stream):
             )
             batch = recursive_apply(batch, _record_stream, current_stream)
     stream_event = stream.record_event() if stream is not None else None
-    # end = timer()
-    # global pre_
-    # pre_ = pre_ + end - start
+    end = timer()
+
+    global pre_nfeat, pre_mfg
+    pre_nfeat = (pre_nfeat + end_ - start_)
+    pre_mfg = (pre_mfg + end - start)
     return batch, feats, stream_event
 
 
@@ -736,8 +746,10 @@ class _PrefetchingIter(object):
         batch = recursive_apply_pair(batch, feats, _assign_for)
         if stream_event is not None:
             stream_event.wait()
-        global pre_, sample_
-        # self.dataloader.pre = pre_
+        global pre_nfeat, pre_mfg, sample_
+        #Update the prefetch time taken for nfeats/mfg.
+        self.dataloader.pre_nfeat = pre_nfeat
+        self.dataloader.pre_mfg = pre_mfg
         # Fetch the global variable using the getter function in pytorch_tensor.py
         self.dataloader.scatter = scatter_gather_()
         return batch
@@ -892,6 +904,23 @@ class DataLoader(torch.utils.data.DataLoader):
         cache sizes. Please see
         https://github.com/NVIDIA-Merlin/HugeCTR/blob/main/gpu_cache/ReadMe.md
         for further reference.
+    
+    pre_nfeat : {int}
+        Added a member to store the time required to prefetch nfeats
+
+    pre_mfg : {int}
+        Added a member to store the time required to prefetch mfg
+
+    skip_mfg : [1, 0], optional
+        If true, we skip sending the MFG to the GPU memory once the mini-batch is ready. 
+        Later on-demand the user has to fetch the MFG's once the training starts.
+
+        This option is applicable only when use_uva = False.
+        {TODO: Add checks later}
+
+    scatter : {int}
+        Added a member to store the time required to scatter-gather nfeats/MFG.
+
     kwargs : dict
         Key-word arguments to be passed to the parent PyTorch
         :py:class:`torch.utils.data.DataLoader` class. Common arguments are:
@@ -969,7 +998,8 @@ class DataLoader(torch.utils.data.DataLoader):
         pin_prefetcher=None,
         use_uva=False,
         gpu_cache=None,
-        pre=0,
+        pre_nfeat=0,
+        pre_mfg=0,
         skip_mfg=0,
         scatter = 0,
         **kwargs,
@@ -1021,8 +1051,9 @@ class DataLoader(torch.utils.data.DataLoader):
         self.graph = graph
         self.indices = indices  # For PyTorch-Lightning
         self.skip_mfg = skip_mfg
-        self.pre = 0
-        self.scatter = 0
+        self.pre_nfeat = pre_nfeat
+        self.pre_mfg = pre_mfg
+        self.scatter = scatter
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None
@@ -1193,9 +1224,15 @@ class DataLoader(torch.utils.data.DataLoader):
         # When using multiprocessing PyTorch sometimes set the number of PyTorch threads to 1
         # when spawning new Python threads.  This drastically slows down pinning features.
         num_threads = torch.get_num_threads() if self.num_workers > 0 else None
-        global sample_, pre_
-        sample_ = pre_ = 0
         
+        # At the start of new iteration reset the global var pre_nfeat, pre_mfg
+        global pre_nfeat, pre_mfg
+        if self.pre_nfeat == 0:
+            pre_nfeat = 0
+        
+        if self.pre_mfg == 0:
+            pre_mfg = 0
+
         # Reset the global var "scatter_gather" at start of a new epoch.
         if self.scatter == 0:
             set_zero()

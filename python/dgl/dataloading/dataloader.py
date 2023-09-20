@@ -750,6 +750,10 @@ class _PrefetchingIter(object):
         #Update the prefetch time taken for nfeats/mfg.
         self.dataloader.pre_nfeat = pre_nfeat
         self.dataloader.pre_mfg = pre_mfg
+
+        # Update the sampling time
+        self.dataloader.sample = sample_
+
         # Fetch the global variable using the getter function in pytorch_tensor.py
         self.dataloader.scatter = scatter_gather_()
         return batch
@@ -1002,6 +1006,7 @@ class DataLoader(torch.utils.data.DataLoader):
         pre_mfg=0,
         skip_mfg=0,
         scatter = 0,
+        sample=0,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1054,6 +1059,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self.pre_nfeat = pre_nfeat
         self.pre_mfg = pre_mfg
         self.scatter = scatter
+        self.sample = sample
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None
@@ -1226,7 +1232,7 @@ class DataLoader(torch.utils.data.DataLoader):
         num_threads = torch.get_num_threads() if self.num_workers > 0 else None
         
         # At the start of new iteration reset the global var pre_nfeat, pre_mfg
-        global pre_nfeat, pre_mfg
+        global pre_nfeat, pre_mfg, sample_
         if self.pre_nfeat == 0:
             pre_nfeat = 0
         
@@ -1237,6 +1243,10 @@ class DataLoader(torch.utils.data.DataLoader):
         if self.scatter == 0:
             set_zero()
         
+        # Reset the global var sample at start of every epoch 
+        if self.sample == 0:
+            sample_ = 0
+            
         return _PrefetchingIter(
             self, super().__iter__(), num_threads=num_threads
         )

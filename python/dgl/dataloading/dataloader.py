@@ -370,6 +370,7 @@ def _init_gpu_caches(graph, gpu_caches):
                             column.shape,
                         )
 
+from ..utils import gather_pinned_tensor_rows
 
 def _prefetch_update_feats(
     feats,
@@ -380,6 +381,7 @@ def _prefetch_update_feats(
     device,
     pin_prefetcher,
     gpu_caches,
+    cgg,
 ):
     for tid, frame in enumerate(frames):
         type_ = types[tid]
@@ -399,7 +401,9 @@ def _prefetch_update_feats(
                     values, missing_index, missing_keys = cache.query(ids)
                     missing_values = get_storage_func(parent_key, type_).fetch(
                         missing_keys, device, pin_prefetcher
-                    )
+                    ) if cgg == False else gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
+                                                                     missing_keys)
+                                                                     
                     cache.replace(
                         missing_keys, F.astype(missing_values, F.float32)
                     )
@@ -410,10 +414,17 @@ def _prefetch_update_feats(
                     values.__cache_miss__ = missing_keys.shape[0] / ids.shape[0]
                     feats[tid, key] = values
                 else:
+                    
+                    ids = ids if cgg == False else ids.to(device)
+                    '''
+                        If cgg is false, we are fetching graph features as per the mode set by the user,
+                        else we are fetching node features using UVA
+                    '''
                     feats[tid, key] = get_storage_func(parent_key, type_).fetch(
                         ids, device, pin_prefetcher
-                    )
-
+                    ) if cgg == False else gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
+                                                                     ids)
+                                                                    
 
 # This class exists to avoid recursion into the feature dictionary returned by the
 # prefetcher when calling recursive_apply().
@@ -424,7 +435,7 @@ class _PrefetchedGraphFeatures(object):
         self.node_feats = node_feats
         self.edge_feats = edge_feats
 
-
+# Add a new field for ccg
 def _prefetch_for_subgraph(subg, dataloader):
     node_feats, edge_feats = {}, {}
     _prefetch_update_feats(
@@ -436,6 +447,7 @@ def _prefetch_for_subgraph(subg, dataloader):
         dataloader.device,
         dataloader.pin_prefetcher,
         dataloader.graph._gpu_caches["node"],
+        dataloader.cgg,
     )
     _prefetch_update_feats(
         edge_feats,
@@ -446,6 +458,7 @@ def _prefetch_for_subgraph(subg, dataloader):
         dataloader.device,
         dataloader.pin_prefetcher,
         dataloader.graph._gpu_caches["edge"],
+        dataloader.cgg,
     )
     return _PrefetchedGraphFeatures(node_feats, edge_feats)
 
@@ -1007,6 +1020,7 @@ class DataLoader(torch.utils.data.DataLoader):
         skip_mfg=0,
         scatter = 0,
         sample=0,
+        cgg=False,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1060,6 +1074,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self.pre_mfg = pre_mfg
         self.scatter = scatter
         self.sample = sample
+        self.cgg = cgg
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None
@@ -1125,6 +1140,9 @@ class DataLoader(torch.utils.data.DataLoader):
                 if self.graph.device.type == "cpu" and num_workers > 0:
                     # Instantiate all the formats if the number of workers is greater than 0.
                     self.graph.create_formats_()
+                
+            if self.cgg == True:
+                self.graph.pin_memory_()
 
             # Check pin_prefetcher and use_prefetch_thread - should be only effective
             # if performing CPU sampling but output device is CUDA

@@ -25,6 +25,20 @@ def _fetch_cpu(indices, tensor, feature_shape, device, pin_memory, **kwargs):
     result = result.to(device, **kwargs)
     return result
 
+'''
+    Adding logic where we just want to gather and pin the features for the mini-batch on CPU.
+'''
+def gather_pin_nfeats_(indices, tensor, feature_shape, device, pin_memory, **kwargs):
+    result = torch.empty(
+        indices.shape[0],
+        *feature_shape,
+        dtype=tensor.dtype,
+        pin_memory=pin_memory,
+    )
+    torch.index_select(tensor, 0, indices, out=result)
+    
+    return result
+
 # Adding getter and setter methods
 def scatter_gather_():
     return scatter_gather

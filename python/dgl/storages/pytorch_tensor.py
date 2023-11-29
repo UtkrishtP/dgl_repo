@@ -73,14 +73,9 @@ class PyTorchTensorStorage(BaseTensorStorage):
                     )
             # CPU to CPU or CUDA - use pin_memory and async transfer if possible
             else:
-                return _fetch_cpu(
-                    indices,
-                    self.storage,
-                    self.storage.shape[1:],
-                    device,
-                    pin_memory,
-                    **kwargs,
-                )
+                return (_fetch_cpu(indices, self.storage, self.storage.shape[1:], device, pin_memory, **kwargs) 
+                    if kwargs.get('gather_pin_only', False) == False 
+                    else gather_pin_nfeats_(indices, self.storage, self.storage.shape[1:], device, pin_memory, **kwargs))
         else:
             # CUDA to CUDA or CPU
             return _fetch_cuda(indices, self.storage, device, **kwargs)

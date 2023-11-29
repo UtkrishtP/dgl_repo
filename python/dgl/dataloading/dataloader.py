@@ -383,7 +383,7 @@ def _prefetch_update_feats(
     device,
     pin_prefetcher,
     gpu_caches,
-    cgg,
+    dataloader,
 ):
     for tid, frame in enumerate(frames):
         type_ = types[tid]
@@ -417,7 +417,7 @@ def _prefetch_update_feats(
                     feats[tid, key] = values
                 else:
                     start = timer()
-                    if cgg == True:
+                    if dataloader.cgg == True:
                         stream = torch.cuda.Stream(device=device)
                         with torch.cuda.stream(stream):
                             ids.pin_memory()
@@ -433,9 +433,10 @@ def _prefetch_update_feats(
                         If cgg is false, we are fetching graph features as per the mode set by the user,
                         else we are fetching node features using UVA
                     '''
+                    kwargs={'gather_pin_only': dataloader.gather_pin_only}
                     feats[tid, key] = get_storage_func(parent_key, type_).fetch(
-                        ids, device, pin_prefetcher
-                    ) 
+                        ids, device, pin_prefetcher, **kwargs
+                    )
                     #if cgg == False else gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
                     #                                                 ids)
                                                                     
@@ -461,7 +462,7 @@ def _prefetch_for_subgraph(subg, dataloader):
         dataloader.device,
         dataloader.pin_prefetcher,
         dataloader.graph._gpu_caches["node"],
-        dataloader.cgg,
+        dataloader
     )
     _prefetch_update_feats(
         edge_feats,
@@ -472,7 +473,7 @@ def _prefetch_for_subgraph(subg, dataloader):
         dataloader.device,
         dataloader.pin_prefetcher,
         dataloader.graph._gpu_caches["edge"],
-        dataloader.cgg,
+        dataloader
     )
     return _PrefetchedGraphFeatures(node_feats, edge_feats)
 
@@ -542,8 +543,9 @@ def _prefetch(batch, dataloader, stream):
         # fetch node/edge features
         start_ = timer()
         feats = recursive_apply(batch, _prefetch_for, dataloader)
-        feats = recursive_apply(feats, _await_or_return)
-        feats = recursive_apply(feats, _record_stream, current_stream)
+        if dataloader.gather_pin_only == False:
+            feats = recursive_apply(feats, _await_or_return)
+            feats = recursive_apply(feats, _record_stream, current_stream)
         end_ = timer()
         # transfer input nodes/seed nodes/subgraphs
 
@@ -1037,6 +1039,7 @@ class DataLoader(torch.utils.data.DataLoader):
         sample=0,
         cgg=False,
         index_transfer=0,
+        gather_pin_only=False,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1066,6 +1069,7 @@ class DataLoader(torch.utils.data.DataLoader):
             self.pin_prefetcher = pin_prefetcher
             self.use_uva = use_uva
             self.index_transfer = index_transfer
+            self.gather_pin_only = gather_pin_only
             kwargs["batch_size"] = None
             super().__init__(**kwargs)
             return
@@ -1092,6 +1096,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self.scatter = scatter
         self.sample = sample
         self.cgg = cgg
+        self.gather_pin_only = gather_pin_only
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None

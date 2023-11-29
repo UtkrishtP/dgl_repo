@@ -372,6 +372,8 @@ def _init_gpu_caches(graph, gpu_caches):
 
 from ..utils import gather_pinned_tensor_rows
 
+index_transfer = 0
+
 def _prefetch_update_feats(
     feats,
     frames,
@@ -414,16 +416,28 @@ def _prefetch_update_feats(
                     values.__cache_miss__ = missing_keys.shape[0] / ids.shape[0]
                     feats[tid, key] = values
                 else:
+                    start = timer()
+                    if cgg == True:
+                        stream = torch.cuda.Stream(device=device)
+                        with torch.cuda.stream(stream):
+                            ids.pin_memory()
+                            ids = ids.to(device, non_blocking=True)
+                        stream_event = stream.record_event()
                     
-                    ids = ids if cgg == False else ids.to(device)
+                        if stream_event is not None:
+                            stream_event.wait()
+                    end = timer()
+                    global index_transfer
+                    index_transfer = index_transfer + end - start
                     '''
                         If cgg is false, we are fetching graph features as per the mode set by the user,
                         else we are fetching node features using UVA
                     '''
                     feats[tid, key] = get_storage_func(parent_key, type_).fetch(
                         ids, device, pin_prefetcher
-                    ) if cgg == False else gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
-                                                                     ids)
+                    ) 
+                    #if cgg == False else gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
+                    #                                                 ids)
                                                                     
 
 # This class exists to avoid recursion into the feature dictionary returned by the
@@ -759,7 +773,7 @@ class _PrefetchingIter(object):
         batch = recursive_apply_pair(batch, feats, _assign_for)
         if stream_event is not None:
             stream_event.wait()
-        global pre_nfeat, pre_mfg, sample_
+        global pre_nfeat, pre_mfg, sample_, index_transfer
         #Update the prefetch time taken for nfeats/mfg.
         self.dataloader.pre_nfeat = pre_nfeat
         self.dataloader.pre_mfg = pre_mfg
@@ -767,6 +781,7 @@ class _PrefetchingIter(object):
         # Update the sampling time
         self.dataloader.sample = sample_
 
+        self.dataloader.index_transfer = index_transfer
         # Fetch the global variable using the getter function in pytorch_tensor.py
         self.dataloader.scatter = scatter_gather_()
         return batch
@@ -1021,6 +1036,7 @@ class DataLoader(torch.utils.data.DataLoader):
         scatter = 0,
         sample=0,
         cgg=False,
+        index_transfer=0,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1049,6 +1065,7 @@ class DataLoader(torch.utils.data.DataLoader):
             self.use_alternate_streams = use_alternate_streams
             self.pin_prefetcher = pin_prefetcher
             self.use_uva = use_uva
+            self.index_transfer = index_transfer
             kwargs["batch_size"] = None
             super().__init__(**kwargs)
             return
@@ -1230,6 +1247,10 @@ class DataLoader(torch.utils.data.DataLoader):
             worker_init_fn=worker_init_fn,
             **kwargs,
         )
+
+    def extract_uva(ids):
+        gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
+                                                                     ids)
 
     def __iter__(self):
         if (

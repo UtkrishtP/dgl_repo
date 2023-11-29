@@ -168,24 +168,20 @@ def hybrid(cpu_dataloader, gpu_dataloader, epoch_, mfg) :
             
             for blocks in cpu_sampled_blocks[cpu_samples_processed]:
 
+                # Transfer MFG in the background using memcpyasync and on a different stream
                 if mfg == 0:
                     blocks = recursive_apply(
                         blocks, lambda x: x.to("cuda", non_blocking=True))
                     
                 x = blocks[0].srcdata["feat"]
-
-                start2 = timer()
-                y = blocks[-1].dstdata["label"].type(torch.LongTensor).to(device)
-                # y = blocks[-1].dstdata["label"]
-                end2 = timer()
-
+                y = blocks[-1].dstdata["label"]
                 y_hat = model(blocks, x)
                 loss = F.cross_entropy(y_hat, y)
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
                 total_loss += loss.item()
-                count1 = count1 + (end2 - start2)
+                # count1 = count1 + (end2 - start1)
             
             cpu_samples_processed = cpu_samples_processed + 1
             epoch = epoch - 1
@@ -197,21 +193,18 @@ def hybrid(cpu_dataloader, gpu_dataloader, epoch_, mfg) :
             gpu_dataloader
         ):
             x = blocks[0].srcdata["feat"]
-            start2 = timer()
-            y = blocks[-1].dstdata["label"].type(torch.LongTensor).to(device)
-            # y = blocks[-1].dstdata["label"]
-            end2 = timer()
+            y = blocks[-1].dstdata["label"]
             y_hat = model(blocks, x)
             loss = F.cross_entropy(y_hat, y)
             opt.zero_grad()
             loss.backward()
             opt.step()
             total_loss += loss.item()
-            count = count + (end2 - start2)
+            # count = count + (end2 - start1)
             # continue
 
         epoch = epoch - 1
-        end1 = end1 + count
+        # end1 = end1 + count
         # print("GPU trained : ", count)
 
     end = timer()
@@ -274,11 +267,11 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=0,
-        # use_prefetch_thread = True,
-        # pin_prefetcher = True,
-        # use_alternate_streams = True,
-        # persistent_workers=True,
+        num_workers=8,
+        use_prefetch_thread = True,
+        pin_prefetcher = True,
+        use_alternate_streams = True,
+        persistent_workers=True,
         # sample=1,
         skip_mfg=0,
     )
@@ -291,11 +284,11 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=0,
-        # use_prefetch_thread = True,
-        # pin_prefetcher = True,
-        # use_alternate_streams = True,
-        # persistent_workers=True,
+        num_workers=8,
+        use_prefetch_thread = True,
+        pin_prefetcher = True,
+        use_alternate_streams = True,
+        persistent_workers=True,
         # sample=1,
         skip_mfg=1,
     )
@@ -308,11 +301,11 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=0,
-        # use_prefetch_thread = True,
-        # pin_prefetcher = True,
-        # use_alternate_streams = True,
-        # persistent_workers=True,
+        num_workers=8,
+        use_prefetch_thread = True,
+        pin_prefetcher = True,
+        use_alternate_streams = True,
+        persistent_workers=True,
         skip_mfg=0,
     )
 
@@ -324,11 +317,11 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=0,
-        # use_prefetch_thread = True,
-        # pin_prefetcher = True,
-        # use_alternate_streams = True,
-        # persistent_workers=True,
+        num_workers=8,
+        use_prefetch_thread = True,
+        pin_prefetcher = True,
+        use_alternate_streams = True,
+        persistent_workers=True,
         skip_mfg=1,
     )
 
@@ -336,25 +329,25 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         Looping over 1 iteration of CPU based MP sampling to compensate for process launch overhead.
         Once the processes are launched they will be re-used from the pool.
     '''
-    # for it, (input_nodes, output_nodes, blocks) in enumerate(
-    #         cpu_fused_dataloader
-    #     ):
-    #         break
+    for it, (input_nodes, output_nodes, blocks) in enumerate(
+            cpu_fused_dataloader
+        ):
+            break
     
-    # for it, (input_nodes, output_nodes, blocks) in enumerate(
-    #         cpu_fused_dataloader_prefetch_mfg
-    #     ):
-    #         break
+    for it, (input_nodes, output_nodes, blocks) in enumerate(
+            cpu_fused_dataloader_prefetch_mfg
+        ):
+            break
     
-    # for it, (input_nodes, output_nodes, blocks) in enumerate(
-    #         cpu_fused_dataloader_prefetch_nfeats
-    #     ):
-    #         break
+    for it, (input_nodes, output_nodes, blocks) in enumerate(
+            cpu_fused_dataloader_prefetch_nfeats
+        ):
+            break
     
-    # for it, (input_nodes, output_nodes, blocks) in enumerate(
-    #         cpu_fused_dataloader_prefetch_nfeats_mfg
-    #     ):
-    #         break
+    for it, (input_nodes, output_nodes, blocks) in enumerate(
+            cpu_fused_dataloader_prefetch_nfeats_mfg
+        ):
+            break
     
     '''
         Profiling hybrid sampling using all 4 combinations of prefetch:
@@ -413,7 +406,7 @@ if __name__ == "__main__":
     print("Loading data")
     start = timer()
     
-    dataset = AsNodePredDataset(DglNodePropPredDataset("ogbn-papers100M")) #, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/"))
+    dataset = AsNodePredDataset(DglNodePropPredDataset("ogbn-papers100M"), save_dir='/disk1/tmp/') #, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/"))
     
     end = timer()
 
@@ -423,6 +416,7 @@ if __name__ == "__main__":
     device = torch.device("cpu" if args.mode == "cpu" else "cuda")
     g.pin_memory_()
     # create GraphSAGE model
+    g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
     in_size = g.ndata["feat"].shape[1]
     out_size = dataset.num_classes
     model = SAGE(in_size, 256, out_size).to(device)
@@ -431,8 +425,8 @@ if __name__ == "__main__":
     print("Training...")
     
     # train(args, device, g, dataset, model, num_classes, f, 1024, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread)
-    batch_ = [512, 1024, 2048, 4096, 8192]
-    epoch_ = [10, 50]
+    batch_ = [512, 2048, 8192]
+    epoch_ = [10, 20]
     for batch in batch_:
         for epoch in epoch_:
             f.write(str(batch) + "," + str(epoch) + ",")

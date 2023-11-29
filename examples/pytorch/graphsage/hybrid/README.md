@@ -25,7 +25,7 @@ Model : GraphSage
  - nfeat
  - None
 
- Since hybrid sampling consist of both CPU and GPU based dataloaders working simultaneously, for CPU based dataloaders we have tuned the best combinations for # workers.
+ Since hybrid sampling consist of both CPU and GPU based dataloaders working simultaneously, for CPU based dataloaders we have hand tuned the best combinations for # workers.
 
  ## Implementation
 
@@ -38,3 +38,6 @@ Model : GraphSage
 - The above process keeps on repeating to and fro until total epochs required for training.
 
 ## To-do
+
+- [] https://github.com/UtkrishtP/deepgraph/issues/1
+- [] https://github.com/UtkrishtP/deepgraph/issues/2

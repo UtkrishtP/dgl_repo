@@ -145,76 +145,19 @@ def cpu_sample(dataloader):
         cpu_samples = cpu_samples + 1
     done = 1
 
-def hybrid(cpu_dataloader, gpu_dataloader, epoch_, mfg) :
-    cpu_samples_processed = 0
-    global prof
-    prof = 0
-    global cpu_samples
-    cpu_samples = 0 
+def transfer_mfg(sample):
+    global cpu_sampled_blocks
+    # stream = torch.cuda.Stream("cuda")
+    # current_stream = torch.cuda.current_stream()
+    # current_stream.wait_stream(stream)
 
-    th = threading.Thread(target=cpu_sample, args=(cpu_dataloader,))
-    th.start()
+    # with torch.cuda.stream(stream):
+    for blocks in cpu_sampled_blocks[sample]:
+        blocks = recursive_apply(
+                    blocks, lambda x: x.to("cuda", non_blocking=True))
+        # blocks = recursive_apply(blocks, _record_stream, current_stream)
 
-    epoch = epoch_
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
-    end1 = start1 = end2 = count = count1 = 0
-    start = timer()
-    while epoch > 0:
-
-        model.train()
-        total_loss = 0
-        
-        # Checking if new samples for an epoch have been produced, if yes then train this epoch directly
-        while cpu_samples_processed < cpu_samples:
-            
-            for blocks in cpu_sampled_blocks[cpu_samples_processed]:
-
-                if mfg == 0:
-                    blocks = recursive_apply(
-                        blocks, lambda x: x.to("cuda", non_blocking=True))
-                    
-                x = blocks[0].srcdata["feat"]
-                y = blocks[-1].dstdata["label"]
-
-                y_hat = model(blocks, x)
-                loss = F.cross_entropy(y_hat, y)
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                total_loss += loss.item()
-                # count1 = count1 + (end2 - start2)
-            
-            cpu_samples_processed = cpu_samples_processed + 1
-            epoch = epoch - 1
-            
-        # TODO: Overlap GPU sampling with the above process.
-        # GPU UVA pipeline
-
-        for it, (input_nodes, output_nodes, blocks) in enumerate(
-            gpu_dataloader
-        ):
-            x = blocks[0].srcdata["feat"]
-            y = blocks[-1].dstdata["label"]
-            y_hat = model(blocks, x)
-            loss = F.cross_entropy(y_hat, y)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            total_loss += loss.item()
-            # count = count + (end2 - start2)
-            # continue
-
-        epoch = epoch - 1
-        # end1 = end1 + count
-        # print("GPU trained : ", count)
-
-    end = timer()
-    prof = 1
-    th.join()    
-    f.write(str(end - start - count - count1) + "," +
-    str(cpu_samples) + "," + str(cpu_samples_processed) + "\n")
-
-def train(args, device, g, dataset, model, num_classes, f, batch_size, workers, use_uva, _pin, _alternate, _prefetch_th, epoch_):
+def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, _pin, _alternate, _prefetch_th, epoch_):
     # create sampler & dataloader
 
     '''
@@ -226,141 +169,194 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, workers, 
         This is for the scenario of inter epoch sampling
     '''
 
-    gpu_train_idx = dataset.train_idx.to(device)
     cpu_train_idx = dataset.train_idx
 
-    labor_sampler = LaborSampler(
-        [10, 10, 10],
+    # val_idx = dataset.val_idx.to(device)
+
+    # Two different samplers and dataloaders have been created for GPU and CPU counterparts.
+    cpu_fused_sampler_pre = NeighborSampler(
+        [10, 10, 10],  # fanout for [layer-0, layer-1, layer-2]
+        prefetch_node_feats=["feat"],
+        prefetch_labels=["label"],
     )
 
-    labor_sampler_prefetch = LaborSampler(
+    cpu_fused_sampler = NeighborSampler(
+        [10, 10, 10],  # fanout for [layer-0, layer-1, layer-2]
+        # prefetch_node_feats=["feat"],
+        # prefetch_labels=["label"],
+    )
+
+    cpu_neighbor_sampler_pre = NeighborSampler(
+        [10, 10, 10],  # fanout for [layer-0, layer-1, layer-2]
+        fused=False,
+        prefetch_node_feats=["feat"],
+        prefetch_labels=["label"],
+    )
+
+    cpu_neighbor_sampler = NeighborSampler(
+        [10, 10, 10],  # fanout for [layer-0, layer-1, layer-2]
+        fused=False,
+        # prefetch_node_feats=["feat"],
+        # prefetch_labels=["label"],
+    )
+
+    cpu_labor_sampler_pre = LaborSampler(
         [10, 10, 10],
         prefetch_node_feats=["feat"],
         prefetch_labels=["label"],
     )
 
-    gpu_labor_sampler = LaborSampler(
+    cpu_labor_sampler = LaborSampler(
         [10, 10, 10],
-        prefetch_node_feats=["feat"],
-        prefetch_labels=["label"],
+        # prefetch_node_feats=["feat"],
+        # prefetch_labels=["label"],
     )
 
-    gpu_labor_dataloader = DataLoader(
+    cpu_fused_dataloader_prefetch_nfeats_mfg = DataLoader(
         g,
-        gpu_train_idx,
-        gpu_labor_sampler,
+        cpu_train_idx,
+        cpu_fused_sampler_pre,
         device=device,
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
         num_workers=0,
-        use_uva=True,
-    )
-
-    cpu_labor_dataloader_prefetch_nfeats_mfg = DataLoader(
-        g,
-        cpu_train_idx,
-        labor_sampler_prefetch,
-        device=device,
-        batch_size=batch_size,
-        shuffle=True,
-        drop_last=False,
-        num_workers=workers,
-        use_prefetch_thread = True,
-        pin_prefetcher = True,
-        use_alternate_streams = True,
-        persistent_workers=True,
+        # use_prefetch_thread = True,
+        # pin_prefetcher = True,
+        # use_alternate_streams = True,
+        # persistent_workers=True,
+        # sample=1,
         skip_mfg=0,
     )
 
-    cpu_labor_dataloader_prefetch_nfeats = DataLoader(
+    cpu_fused_dataloader_prefetch_nfeats = DataLoader(
         g,
         cpu_train_idx,
-        labor_sampler_prefetch,
+        cpu_fused_sampler_pre,
         device=device,
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=workers,
-        use_prefetch_thread = True,
-        pin_prefetcher = True,
-        use_alternate_streams = True,
-        persistent_workers=True,
+        num_workers=0,
+        # use_prefetch_thread = True,
+        # pin_prefetcher = True,
+        # use_alternate_streams = True,
+        # persistent_workers=True,
+        # sample=1,
         skip_mfg=1,
     )
 
-    cpu_labor_dataloader_prefetch_mfg = DataLoader(
+    cpu_fused_dataloader_prefetch_mfg = DataLoader(
         g,
         cpu_train_idx,
-        labor_sampler,
+        cpu_fused_sampler,
         device=device,
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=workers,
-        use_prefetch_thread = True,
-        pin_prefetcher = True,
-        use_alternate_streams = True,
-        persistent_workers=True,
+        num_workers=0,
+        # use_prefetch_thread = True,
+        # pin_prefetcher = True,
+        # use_alternate_streams = True,
+        # persistent_workers=True,
         skip_mfg=0,
     )
 
-    cpu_labor_dataloader = DataLoader(
+    cpu_fused_dataloader = DataLoader(
         g,
         cpu_train_idx,
-        labor_sampler,
+        cpu_fused_sampler,
         device=device,
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=workers,
-        use_prefetch_thread = True,
-        pin_prefetcher = True,
-        use_alternate_streams = False,
-        persistent_workers=True,
+        num_workers=0,
+        # use_prefetch_thread = True,
+        # pin_prefetcher = True,
+        # use_alternate_streams = True,
+        # persistent_workers=True,
         skip_mfg=1,
     )
 
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
+   
+    for it, (input_nodes, output_nodes, blocks) in enumerate(
+            cpu_fused_dataloader_prefetch_nfeats
+        ):
+        break
+
+    for it, (input_nodes, output_nodes, blocks) in enumerate(
+        cpu_fused_dataloader_prefetch_nfeats_mfg
+    ):
+        break
+
+
     '''
-        Looping over 1 iteration of CPU based MP sampling to compensate for process launch overhead.
-        Once the processes are launched they will be re-used from the pool.
-    '''
-    for it, (input_nodes, output_nodes, blocks) in enumerate(
-            cpu_labor_dataloader
-        ):
-            break
-    
-    for it, (input_nodes, output_nodes, blocks) in enumerate(
-            cpu_labor_dataloader_prefetch_mfg
-        ):
-            break
-    
-    for it, (input_nodes, output_nodes, blocks) in enumerate(
-            cpu_labor_dataloader_prefetch_nfeats
-        ):
-            break
-    
-    for it, (input_nodes, output_nodes, blocks) in enumerate(
-            cpu_labor_dataloader_prefetch_nfeats_mfg
-        ):
-            break
-    
-    '''
-        Profiling hybrid sampling using all 4 combinations of prefetch:
-            - MFG + Nfeat
-            - Nfeat
-            - MFG
-            - None
+        Profiling timers for GPU UVA based neighbor/labor sampling based training
     '''
 
-    hybrid(cpu_labor_dataloader, gpu_labor_dataloader, epoch_, 0)
-    hybrid(cpu_labor_dataloader_prefetch_mfg, gpu_labor_dataloader, epoch_, 1)
-    hybrid(cpu_labor_dataloader_prefetch_nfeats, gpu_labor_dataloader, epoch_, 0)
-    hybrid(cpu_labor_dataloader_prefetch_nfeats_mfg, gpu_labor_dataloader, epoch_, 1)
+    start = timer()
+    for epoch in range(epoch_):
 
+        model.train()
+        total_loss = 0
+        end1 = start2 = end2 = count = 0
+
+        for it, (input_nodes, output_nodes, blocks) in enumerate(
+            cpu_fused_dataloader_prefetch_nfeats
+        ):
+            blocks = recursive_apply(
+                        blocks, lambda x: x.to("cuda", non_blocking=True))
+            x = blocks[0].srcdata["feat"]
+            start2 = timer()
+            y = blocks[-1].dstdata["label"].type(torch.LongTensor).to(device)
+            # y = blocks[-1].dstdata["label"]
+            end2 = timer()
+            y_hat = model(blocks, x)
+            loss = F.cross_entropy(y_hat, y)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            total_loss += loss.item()
+            count = count + (end2 - start2)
+            # continue
+    end1 = end1 + count
+    end = timer()
+    # print(end - start)
+    f.write(str(end - start - end1) + ",")
+
+    start = timer()
+    for epoch in range(epoch_):
+
+        model.train()
+        total_loss = 0
+        end1 = start2 = end2 = count = 0
+
+        for it, (input_nodes, output_nodes, blocks) in enumerate(
+            cpu_fused_dataloader_prefetch_nfeats_mfg
+        ):
+            x = blocks[0].srcdata["feat"]
+            start2 = timer()
+            y = blocks[-1].dstdata["label"].type(torch.LongTensor).to(device)
+            # y = blocks[-1].dstdata["label"]
+            end2 = timer()
+            y_hat = model(blocks, x)
+            loss = F.cross_entropy(y_hat, y)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            total_loss += loss.item()
+            count = count + (end2 - start2)
+            # continue
+    end1 = end1 + count
+    end = timer()
+    # print(end - start)
+    f.write(str(end - start - end1) + "\n")
+
+    
 if __name__ == "__main__":
     # f = open('/mnt/utk/data/dgl-latest/sage_node_class_product.txt', "a")
-    f = open('/disk/results/hybrid/labor.txt', "a")
+    f = open('/disk/results/hybrid/fused_mp_only.txt', "a")
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
@@ -401,9 +397,10 @@ if __name__ == "__main__":
     print("Loading data")
     start = timer()
     
-    dataset = AsNodePredDataset(DglNodePropPredDataset("ogbn-papers100M"), save_dir='/disk1/tmp') #, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/"))
+    dataset = AsNodePredDataset(DglNodePropPredDataset("ogbn-papers100M")) #, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/"))
     
     end = timer()
+    
 
     g = dataset[0]
     g = g.to("cuda" if args.mode == "puregpu" else "cpu")
@@ -411,7 +408,6 @@ if __name__ == "__main__":
     device = torch.device("cpu" if args.mode == "cpu" else "cuda")
     g.pin_memory_()
     # create GraphSAGE model
-    g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
     in_size = g.ndata["feat"].shape[1]
     out_size = dataset.num_classes
     model = SAGE(in_size, 256, out_size).to(device)
@@ -420,25 +416,14 @@ if __name__ == "__main__":
     print("Training...")
     
     # train(args, device, g, dataset, model, num_classes, f, 1024, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread)
-    
-    epoch_ = [10, 20]
-    for epoch in epoch_:
-        f.write(str("512") + "," + str(epoch) + ",")
-        train(args, device, g, dataset, model, num_classes, f, 512, 16, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread, epoch)
-
-        # f.write(str("1024") + "," + str(epoch) + ",")
-        # train(args, device, g, dataset, model, num_classes, f, 1024, 16, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread, epoch)
-
-        f.write(str("2048") + "," + str(epoch) + ",")
-        train(args, device, g, dataset, model, num_classes, f, 2048, 16, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread, epoch)
-
-        # f.write(str("4096") + "," + str(epoch) + ",")
-        # train(args, device, g, dataset, model, num_classes, f, 4096, 64, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread, epoch)
-
-        f.write(str("8192") + "," + str(epoch) + ",")
-        train(args, device, g, dataset, model, num_classes, f, 8192, 16, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread, epoch)
-
-    
+    b = [512, 1024, 2048, 4096, 8192]
+    # b = [8192]
+    epoch_ = [10, 50]
+    for batch in reversed(b):
+        for epoch in epoch_:
+            f.write(str(batch) + "," + str(epoch) + ",")
+            train(args, device, g, dataset, model, num_classes, f, batch, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread, epoch)
+        
     # # test the model
     # print("Testing...")
     # acc = layerwise_infer(

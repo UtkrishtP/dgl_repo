@@ -174,19 +174,14 @@ def hybrid(cpu_dataloader, gpu_dataloader, epoch_, mfg) :
                         blocks, lambda x: x.to("cuda", non_blocking=True))
                     
                 x = blocks[0].srcdata["feat"]
-
-                start2 = timer()
-                y = blocks[-1].dstdata["label"].type(torch.LongTensor).to(device)
-                # y = blocks[-1].dstdata["label"]
-                end2 = timer()
-
+                y = blocks[-1].dstdata["label"]
                 y_hat = model(blocks, x)
                 loss = F.cross_entropy(y_hat, y)
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
                 total_loss += loss.item()
-                count1 = count1 + (end2 - start2)
+                # count1 = count1 + (end2 - start2)
             
             cpu_samples_processed = cpu_samples_processed + 1
             epoch = epoch - 1
@@ -198,21 +193,18 @@ def hybrid(cpu_dataloader, gpu_dataloader, epoch_, mfg) :
             gpu_dataloader
         ):
             x = blocks[0].srcdata["feat"]
-            start2 = timer()
-            y = blocks[-1].dstdata["label"].type(torch.LongTensor).to(device)
-            # y = blocks[-1].dstdata["label"]
-            end2 = timer()
+            y = blocks[-1].dstdata["label"]
             y_hat = model(blocks, x)
             loss = F.cross_entropy(y_hat, y)
             opt.zero_grad()
             loss.backward()
             opt.step()
             total_loss += loss.item()
-            count = count + (end2 - start2)
+            # count = count + )
             # continue
 
         epoch = epoch - 1
-        end1 = end1 + count
+        # end1 = end1 + count
         # print("GPU trained : ", count)
 
     end = timer()
@@ -275,7 +267,7 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=32,
+        num_workers=16,
         use_prefetch_thread = True,
         pin_prefetcher = True,
         use_alternate_streams = True,
@@ -291,7 +283,7 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=32,
+        num_workers=16,
         use_prefetch_thread = True,
         pin_prefetcher = True,
         use_alternate_streams = True,
@@ -307,7 +299,7 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=32,
+        num_workers=16,
         use_prefetch_thread = True,
         pin_prefetcher = True,
         use_alternate_streams = True,
@@ -323,7 +315,7 @@ def train(args, device, g, dataset, model, num_classes, f, batch_size, use_uva, 
         batch_size=batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=32,
+        num_workers=16,
         use_prefetch_thread = True,
         pin_prefetcher = True,
         use_alternate_streams = False,
@@ -412,7 +404,7 @@ if __name__ == "__main__":
     print("Loading data")
     start = timer()
     
-    dataset = AsNodePredDataset(DglNodePropPredDataset("ogbn-papers100M")) #, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/"))
+    dataset = AsNodePredDataset(DglNodePropPredDataset("ogbn-papers100M"), save_dir="/disk1/tmp/") #, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/"))
     
     end = timer()
     
@@ -423,6 +415,7 @@ if __name__ == "__main__":
     device = torch.device("cpu" if args.mode == "cpu" else "cuda")
     g.pin_memory_()
     # create GraphSAGE model
+    g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
     in_size = g.ndata["feat"].shape[1]
     out_size = dataset.num_classes
     model = SAGE(in_size, 256, out_size).to(device)
@@ -431,8 +424,8 @@ if __name__ == "__main__":
     print("Training...")
     
     # train(args, device, g, dataset, model, num_classes, f, 1024, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread)
-    b = [512, 1024, 2048, 4096, 8192]
-    epoch_ = [10, 50]
+    b = [512, 2048, 8192]
+    epoch_ = [10, 20]
     for batch in reversed(b):
         for epoch in epoch_:
             f.write(str(batch) + "," + str(epoch) + ",")

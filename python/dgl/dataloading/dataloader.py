@@ -1248,9 +1248,8 @@ class DataLoader(torch.utils.data.DataLoader):
             **kwargs,
         )
 
-    def extract_uva(ids):
-        gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
-                                                                     ids)
+    def cgg_on_demand(self, type, node_or_edge, ids):
+        return self.graph.get_node_storage(type, node_or_edge).fetch(ids, self.device)
 
     def __iter__(self):
         if (

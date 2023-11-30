@@ -1087,6 +1087,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self.sample = sample
         self.cgg = cgg
         self.gather_pin_only = gather_pin_only
+        self.gpu_cache = gpu_cache # gpu_cache is defined but not initialized
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None
@@ -1244,7 +1245,33 @@ class DataLoader(torch.utils.data.DataLoader):
         )
 
     def cgg_on_demand(self, type, node_or_edge, ids):
-        return self.graph.get_node_storage(type, node_or_edge).fetch(ids, self.device)
+        """ 
+            Helper method for CGG on demand.
+            This method is called after sampling is done and using MFG blocks
+            to fetch the nfeats and labels on demand.
+
+            Below are certain scenarios in which this can be used:
+            1. CGG_on_demand is set to True.
+            2. With caching on (gpu_cache is True) as well as CGG_on_demand is set to True.
+
+            Here the nfeat/label is always transferred via UVA both in case of cache miss or GGG.
+        """
+        if self.gpu_cache is None or type == "label":
+            return self.graph.get_node_storage(type, node_or_edge).fetch(ids, self.device)
+        else:
+            gpu_caches = self.graph._gpu_caches["node" if node_or_edge == "_N" else "edge"]
+            cache, item_shape = gpu_caches[type, node_or_edge]
+            values, missing_index, missing_keys = cache.query(ids)
+            missing_values = self.graph.get_node_storage(type, node_or_edge).fetch(missing_keys, self.device)                                 
+            cache.replace(
+                missing_keys, F.astype(missing_values, F.float32)
+            )
+            values = F.astype(values, F.dtype(missing_values))
+            F.scatter_row_inplace(values, missing_index, missing_values)
+            # Reshape the flattened result to match the original shape.
+            F.reshape(values, (values.shape[0],) + item_shape)
+            values.__cache_miss__ = missing_keys.shape[0] / ids.shape[0]
+            return values
 
     def __iter__(self):
         if (

@@ -398,14 +398,19 @@ def _prefetch_update_feats(
                         "and the graph does not have dgl.NID or dgl.EID columns"
                     )
                 ids = column.id_ or default_id
+
+                start = timer()
+                ids = ids.to(device, non_blocking=True) if dataloader.cgg == True else ids
+                end = timer()
+                global index_transfer
+                index_transfer = index_transfer + end - start
+
                 if (parent_key, type_) in gpu_caches:
                     cache, item_shape = gpu_caches[parent_key, type_]
                     values, missing_index, missing_keys = cache.query(ids)
                     missing_values = get_storage_func(parent_key, type_).fetch(
                         missing_keys, device, pin_prefetcher
-                    ) if cgg == False else gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
-                                                                     missing_keys)
-                                                                     
+                    )                                                 
                     cache.replace(
                         missing_keys, F.astype(missing_values, F.float32)
                     )
@@ -416,19 +421,6 @@ def _prefetch_update_feats(
                     values.__cache_miss__ = missing_keys.shape[0] / ids.shape[0]
                     feats[tid, key] = values
                 else:
-                    start = timer()
-                    if dataloader.cgg == True:
-                        stream = torch.cuda.Stream(device=device)
-                        with torch.cuda.stream(stream):
-                            ids.pin_memory()
-                            ids = ids.to(device, non_blocking=True)
-                        stream_event = stream.record_event()
-                    
-                        if stream_event is not None:
-                            stream_event.wait()
-                    end = timer()
-                    global index_transfer
-                    index_transfer = index_transfer + end - start
                     '''
                         If cgg is false, we are fetching graph features as per the mode set by the user,
                         else we are fetching node features using UVA
@@ -437,8 +429,6 @@ def _prefetch_update_feats(
                     feats[tid, key] = get_storage_func(parent_key, type_).fetch(
                         ids, device, pin_prefetcher, **kwargs
                     )
-                    #if cgg == False else gather_pinned_tensor_rows(get_storage_func(parent_key, type_).storage, 
-                    #                                                 ids)
                                                                     
 
 # This class exists to avoid recursion into the feature dictionary returned by the

@@ -1028,8 +1028,10 @@ class DataLoader(torch.utils.data.DataLoader):
         scatter = 0,
         sample=0,
         cgg=False,
+        cgg_on_demand=False,
         index_transfer=0,
         gather_pin_only=False,
+        dataloader=None,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1086,8 +1088,10 @@ class DataLoader(torch.utils.data.DataLoader):
         self.scatter = scatter
         self.sample = sample
         self.cgg = cgg
+        self.cgg_on_demand = cgg_on_demand
         self.gather_pin_only = gather_pin_only
         self.gpu_cache = gpu_cache # gpu_cache is defined but not initialized
+        self.dataloader = dataloader
         num_workers = kwargs.get("num_workers", 0)
 
         indices_device = None
@@ -1154,7 +1158,7 @@ class DataLoader(torch.utils.data.DataLoader):
                     # Instantiate all the formats if the number of workers is greater than 0.
                     self.graph.create_formats_()
                 
-            if self.cgg == True:
+            if self.cgg == True or self.cgg_on_demand == True:
                 self.graph.pin_memory_()
 
             # Check pin_prefetcher and use_prefetch_thread - should be only effective
@@ -1231,7 +1235,8 @@ class DataLoader(torch.utils.data.DataLoader):
 
         self.other_storages = {}
 
-        _init_gpu_caches(self.graph, gpu_cache)
+        if not hasattr(dataloader, 'gpu_cache'):
+            _init_gpu_caches(self.graph, gpu_cache) 
 
         super().__init__(
             self.dataset,
@@ -1244,7 +1249,7 @@ class DataLoader(torch.utils.data.DataLoader):
             **kwargs,
         )
 
-    def cgg_on_demand(self, type, node_or_edge, ids):
+    def _cgg_on_demand(self, type, node_or_edge, ids):
         """ 
             Helper method for CGG on demand.
             This method is called after sampling is done and using MFG blocks

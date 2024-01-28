@@ -1,5 +1,7 @@
 import argparse
 from platform import node
+import queue
+from socket import timeout
 from turtle import done
 from dgl import data
 from dgl.ndarray import cpu
@@ -31,18 +33,19 @@ from dgl.utils.internal import recursive_apply
 from dgl.heterograph import *
 import time
 import torch.multiprocessing
-try:
-    torch.multiprocessing.set_start_method('spawn')
-except RuntimeError:
-    pass
+# try:
+#     torch.multiprocessing.set_start_method('spawn')
+# except RuntimeError:
+#     pass
 import torch.utils.data._utils.pin_memory as pm
+from pynvml import *
+
 # from dgl.dataloading.dataloader import *
 
 # import os.path.join(os.getcwd(), "..", "..", "..", "python", "dgl", "utils")
 # print(util_path)
 # import util_path
 torch.multiprocessing.set_sharing_strategy('file_system')
-
 
 class SAGE(nn.Module):
     def __init__(self, in_size, hid_size, out_size):
@@ -139,6 +142,93 @@ def layerwise_infer(device, graph, nid, model, num_classes, batch_size):
         Function to continuously sample using CPU. The dataloader object passed has all the
         optimizations turned on. 
 '''
+# parser = argparse.ArgumentParser()
+# parser.add_argument(
+#     "--mode",
+#     default="mixed",
+#     choices=["cpu", "mixed", "puregpu"],
+#     help="Training mode. 'cpu' for CPU training, 'mixed' for CPU-GPU mixed training, "
+#     "'puregpu' for pure-GPU training.",
+# )
+# f1 = open('./hybrid_nbr_cgg_on_demand.txt', "a")
+# f2 = open('./hybrid_labor_cgg_on_demand.txt', "a")
+# parser.add_argument(
+#     "--uva",
+#     type=bool,
+#     default = True,
+#     choices = [True,False])
+
+# parser.add_argument(
+#     "--pin_prefetcher",
+#     type=bool,
+#     default = False,
+#     choices = [True,False])
+
+# parser.add_argument(
+#     "--alternate_streams",
+#     type=bool,
+#     default = False,
+#     choices = [True,False])
+
+# parser.add_argument(
+#     "--prefetch_thread",
+#     type=bool,
+#     default = False,
+#     choices = [True,False])
+
+# parser.add_argument(
+#     "--dataset",
+#     type=str,
+#     default = "ogbn-papers100M",
+#     )
+
+# parser.add_argument(
+#     "--batch_size",
+#     type=int,
+#     default = 8192,
+#     )
+
+# parser.add_argument(
+#     "--epoch",
+#     type=int,
+#     default = 10,
+#     )
+
+# parser.add_argument(
+#     "--workers",
+#     type=int,
+#     default = 0,
+#     )
+
+# parser.add_argument(
+#     "--sampler",
+#     type=int,
+#     default=0,
+#     help="0: Fused, 1: Neighbor, 2: Labor"
+# )
+
+# parser.add_argument(
+#     "--skip_mfg",
+#     type=int,
+#     default=1,
+# )
+
+# args = parser.parse_args()
+# dataset = AsNodePredDataset(DglNodePropPredDataset(args.dataset, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/")
+#                                 , save_dir="/disk1/tmp/")    
+# end = timer()
+
+# g = dataset[0]
+# g = g.to("cuda" if args.mode == "puregpu" else "cpu")
+# num_classes = dataset.num_classes
+# # device = torch.device("cpu" if args.mode == "cpu" else "cuda")
+# # g.pin_memory_()
+# # create GraphSAGE model
+# # g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
+# in_size = g.ndata["feat"].shape[1]
+# out_size = dataset.num_classes
+# # model = SAGE(in_size, 256, out_size).to(device)
+
 prof = 0
 cpu_sampled_blocks = {}
 # cpu_sampled_blocks.share_memory_()
@@ -165,14 +255,36 @@ def pin_samples(sample_queue, data_queue, done_event, cpu_samples, mini_batches)
         sample_count = sample_count + 1
         # key = key + 1
 
-# def cpu_sample(dataset, batch, workers, sampler, cpu_train_idx, skip_mfg, done_event, queue):
-def cpu_sample(dataset, batch, workers, sampler, cpu_train_idx, skip_mfg, queue_, done_event, cpu_samples):
-    g = dataset[0]
-    g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
+def util(event):
+    nvmlInit()
+    gpu = 0 #GPU 0
+    handle = nvmlDeviceGetHandleByIndex(gpu)
+    #nvmlUtilization_t util
+    global prof
+    while prof == 0:
+        # util = nvmlDeviceGetUtilizationRates(handle)
+        mem_info = nvmlDeviceGetMemoryInfo(handle)
+        if (mem_info.total - mem_info.used) < (1<<30 * 10):
+            event.set()
+        else:
+            event.clear()
+
+    nvmlShutdown()
+
+def cpu_sample(g, batch, workers, sampler, cpu_train_idx, skip_mfg, queue1,
+               done_event, queue_read_event, process_launch_event, cpu_samples, epoch_):
+    # global g
+    # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    # torch.cuda.set_device(0) 
+    # torch.cuda.init()
+    # print("CPU sampling ",torch.__path__)
+    # print("Sampler : ", torch.cuda.is_available())
+    # torch._C_.cuda_init()
+    # os.environ['CUDA_MODULE_LOADING'] = 'LAZY'
     cpu_neighbor_sampler = ""
     f = open("./cpu_sample.txt", "a")
     mini_batches = (dataset.train_idx.shape[0] // batch) + 1
-    # print("CPU sampling....")
+    # device = torch.device("cuda")
     if sampler == 0:
         cpu_neighbor_sampler = NeighborSampler(
             [10, 10, 10],  # fanout for [layer-0, layer-1, layer-2]
@@ -193,13 +305,12 @@ def cpu_sample(dataset, batch, workers, sampler, cpu_train_idx, skip_mfg, queue_
             layer_dependency=True,
             importance_sampling=-1,
         )
-
+    print("Initialize dataloader")
     cgg_train_dataloader = DataLoader(
         g,
         cpu_train_idx,
         cpu_neighbor_sampler,
-        # device="cuda" if torch.cuda.is_available() else "cpu",
-        device="cuda",
+        device="cpu",
         batch_size=batch,
         shuffle=True,
         drop_last=False,
@@ -207,11 +318,14 @@ def cpu_sample(dataset, batch, workers, sampler, cpu_train_idx, skip_mfg, queue_
         use_uva=False,
         persistent_workers=True if workers > 0 else False,
         # gpu_cache=ggg_train_dataloader.gpu_cache,
-        skip_mfg=False if skip_mfg == 0 else True,
+        skip_mfg=True,
         # dataloader=ggg_train_dataloader,
         # cgg_on_demand=True,
-        # cgg=cgg,
+        # cgg=True,
+        # pin_prefetcher=True,
+        # use_prefetch_thread=True,
     )
+    print("Initialized dataloader...")
 
     if workers > 0:
         for it, (input_nodes, output_nodes, blocks) in enumerate(
@@ -219,131 +333,78 @@ def cpu_sample(dataset, batch, workers, sampler, cpu_train_idx, skip_mfg, queue_
             ):
             break
 
-    sample_queue = torch.multiprocessing.Queue()
-    sample_queue.cancel_join_thread()
-    done_event_ = torch.multiprocessing.Event()
+    gpu_mem_event = torch.multiprocessing.Event()
     cpu_samples.value = 0
-    th = threading.Thread(target=pin_samples, args=(sample_queue, queue_, done_event_, cpu_samples, mini_batches))
-
+    th = threading.Thread(target=util, args=(gpu_mem_event,))
+    print("Starting controller thread")
     th.start()
-    global prof, cpu_sampled_blocks
-    cpu_samples_ = 0
-    while not done_event.is_set():
-    # while prof == 0:
-        
-        cpu_sampled_blocks[cpu_samples_] = []
+    print("Controller thread started")
+    while process_launch_event.is_set():
+        continue
+
+    print("CPU sampling starts")
+    epoch = 0
+    global prof
+    while not done_event.is_set() and epoch < epoch_ - 1:
+        t = 0
+        # cpu_sampled_blocks[cpu_samples] = []
         for it, (input_nodes, output_nodes, blocks) in enumerate(
                 cgg_train_dataloader
             ):
-                cpu_sampled_blocks[cpu_samples_].append(blocks)
-                # queue_.put(blocks)
-                
+                while gpu_mem_event.is_set() or queue_read_event.is_set():
+                    if done_event.is_set():
+                        break
+                    continue
+                if done_event.is_set():
+                        break
+                s = time.time()
+
+                blocks = recursive_apply(
+                        blocks, lambda x: x.to("cuda", non_blocking=True))
+                queue1.put(blocks)
+                del blocks
+                e = time.time()
+                t += (e - s)
         cpu_samples.value = cpu_samples.value + 1
-        cpu_samples_ = cpu_samples_ + 1
+        epoch += 1
         # print("CPU samples : ", cpu_samples.value)
-        f.write("CPU_sample(" + str(time.time()) + ")," )
-    print('ho')
-    done_event_.set()
+        f.write("CPU_sample(" + str(time.time()) + ", " + str(t) + "), ")
+
+    # done_event.set()
+    prof = 1
     th.join()
     f.write("\n")
+    print('Cpu samples ended')
 
-# def hybrid_(gpu_dataloader, epoch_, th, skip_mfg, done_event, queue, mini_batches) :
-def hybrid_(gpu_dataloader, epoch_, th, skip_mfg, mini_batches) :
+    f.close()
+
+def hybrid(g, epoch_, skip_mfg, mini_batches, sampler, batch, queue1,
+            done_event, queue_read_event, process_launch_event, cpu_samples) :
+    # time.sleep(5)
+    # try:
+    #     while not queue1.empty():
+    #         print("hi")
+    #         print(queue1.get(timeout=1))
+    # except Exception as e:
+    #     print(e)
+    # print("Hybrid Ended")
+    # return
+    # torch.cuda.init()
+    # os.environ['CUDA_MODULE_LOADING'] = 'LAZY'
+    f = open('./env_child.txt', "a+")
+    # torch.cuda.set_device(0)
+    
+    print("Hybrid : ", torch.cuda.is_available())
+    # torch._C_.cuda_init()
+    device = torch.device("cuda")
     cpu_samples_processed = 0
-    global prof
-    prof = 0
-    global cpu_samples
-    cpu_samples = 0
-    
-    # th = threading.Thread(target=cpu_sample, args=(cpu_dataloader,))
-    # th = torch.multiprocessing.Process(target=cpu_sample, args=(cpu_dataloader,))
-    
-    th.start()
-    print("Process started")
-    epoch = epoch_
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
-    end1 = start1 = end2 = count = count1 = 0
-    start = timer()
-    while epoch > 0:
-
-        model.train()
-
-        total_loss = 0
-        mini_batch_counter = 0
-        print("Inside training")
-        # Checking if new samples for an epoch have been produced, if yes then train this epoch directly
-        # while cpu_samples_processed < cpu_samples and epoch > 0:
-        # while not queue.empty() and epoch > 0:
-        while cpu_samples_processed < cpu_samples and epoch > 0:
-            print("Inside CPU training")
-            f.write("cgg(" + str(time.time()) + "),")
-            for blocks in cpu_sampled_blocks[cpu_samples_processed]:
-                # blocks = queue.get()
-                # mini_batch_counter = mini_batch_counter + 1
-
-                if skip_mfg == True:
-                    blocks = recursive_apply(
-                        blocks, lambda x: x.to("cuda", non_blocking=True))
-                    
-                # x = blocks[0].srcdata["feat"]
-                # y = blocks[-1].dstdata["label"]
-                x = gpu_dataloader._cgg_on_demand("feat","_N",blocks[0].srcdata["_ID"])
-                y = gpu_dataloader._cgg_on_demand("label","_N",blocks[-1].dstdata["_ID"])
-                y_hat = model(blocks, x)
-                loss = F.cross_entropy(y_hat, y)
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                total_loss += loss.item()
-                # count1 = count1 + (end2 - start2)
-                # if mini_batch_counter == mini_batches:
-                #     mini_batch_counter = 0
-            cpu_sampled_blocks[cpu_samples_processed] = []
-            cpu_samples_processed = cpu_samples_processed + 1
-            epoch = epoch - 1
-            
-        # TODO: Overlap GPU sampling with the above process.
-        # GPU UVA pipeline
-        if epoch == 0:
-            break
-
-        f.write("ggg(" + str(time.time()) + "),")
-
-        for it, (input_nodes, output_nodes, blocks) in enumerate(
-            gpu_dataloader
-        ):
-            print("GPU training")
-            x = blocks[0].srcdata["feat"]
-            y = blocks[-1].dstdata["label"]
-            y_hat = model(blocks, x)
-            loss = F.cross_entropy(y_hat, y)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            total_loss += loss.item()
-            # count = count + )
-            # continue
-        epoch = epoch - 1
-        # end1 = end1 + count
-        # print("GPU trained : ", count)
-
-    end = timer()
-    done_event.set()
-    print("Process ended")
-    f.write("\n" + str(end - start - count - count1) + "," +
-    str(cpu_samples) + "," + str(cpu_samples_processed) + "\n")
-    prof = 1
-
-# def hybrid(dataset, epoch_, skip_mfg, done_event, queue, mini_batches, sampler, batch, model) :
-def hybrid(dataset, epoch_, skip_mfg, mini_batches, sampler, batch, model, queue_, done_event, cpu_samples) :
-    cpu_samples_processed = 0
-    
-    f = open("./cpu_samples.txt", "a")
-    g = dataset[0]
+    model = SAGE(in_size, 256, out_size).to(device)
+    f = open("./timeline.txt", "a")
+    # global g
     g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
     epoch = epoch_
     gpu_train_idx = dataset.train_idx.to("cuda")
-    print("Hybrid")
+    
     gpu_neighbor_sampler = ""
     if sampler == 2:
         gpu_neighbor_sampler = LaborSampler(
@@ -360,24 +421,28 @@ def hybrid(dataset, epoch_, skip_mfg, mini_batches, sampler, batch, model, queue
             prefetch_labels=["label"],
         )
 
+    print("Initialize dataloader")
     ggg_train_dataloader = DataLoader(
         g,
         gpu_train_idx,
         gpu_neighbor_sampler,
-        device="cuda",
+        device=device,
         batch_size=batch,
         shuffle=True,
         drop_last=False,
-        num_workers=0,
         use_uva=True,
-        # persistent_workers=True if workers > 0 else False,
         gpu_cache={"node": {"feat": 10000000}},
     )
-
+    print("Initialized dataloader...")
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
     end1 = start1 = end2 = count = count1 = 0
     start = timer()
+    process_launch_event.clear()
+    print("Hybrid")
 
+    time.sleep(5)
+    done_event.set()
+    return
     while epoch > 0:
 
         model.train()
@@ -385,29 +450,26 @@ def hybrid(dataset, epoch_, skip_mfg, mini_batches, sampler, batch, model, queue
         total_loss = 0
         mini_batch_counter = 0
         bl = 0
-        # print("Inside training")
-        # Checking if new samples for an epoch have been produced, if yes then train this epoch directly
-        # while cpu_samples_processed < cpu_samples and epoch > 0:
-        while not queue_.empty() and epoch > 0 and cpu_samples_processed < cpu_samples.value:
-            # print("Inside CPU training")
-            # print("CPU samples hybrid: ", cpu_samples.value)
-            f.write("cgg(" + str(time.time()) + "),")
+        while not queue1.empty() and epoch > 0 and cpu_samples_processed < cpu_samples.value:
+            f.write("cgg(" + str(time.time()))
+            queue_read_event.set()
+            bl = 0
             while mini_batch_counter != mini_batches:
             # while cpu_samples_processed < cpu_samples and epoch > 0:
                 
-                # for blocks in cpu_sampled_blocks[cpu_samples_processed]:
+            # for blocks in cpu_sampled_blocks[cpu_samples_processed]:
                 s = time.time()
-                blocks = queue_.get()
+                blocks = queue1.get()
                 e = time.time()
                 bl = bl + (e - s)
-                mini_batch_counter = mini_batch_counter + 1
+                mini_batch_counter += 1
 
-                if skip_mfg == True:
-                    blocks = recursive_apply(
-                        blocks, lambda x: x.to("cuda", non_blocking=True))
-                    
-                # x = blocks[0].srcdata["feat"]
-                # y = blocks[-1].dstdata["label"]
+                    # if skip_mfg == True:
+                    #     blocks = recursive_apply(
+                    #         blocks, lambda x: x.to("cuda", non_blocking=True))
+                        
+                    # x = blocks[0].srcdata["feat"]
+                    # y = blocks[-1].dstdata["label"]
                 x = ggg_train_dataloader._cgg_on_demand("feat","_N",blocks[0].srcdata["_ID"])
                 y = ggg_train_dataloader._cgg_on_demand("label","_N",blocks[-1].dstdata["_ID"])
                 y_hat = model(blocks, x)
@@ -416,17 +478,21 @@ def hybrid(dataset, epoch_, skip_mfg, mini_batches, sampler, batch, model, queue
                 loss.backward()
                 opt.step()
                 total_loss += loss.item()
-                # count1 = count1 + (end2 - start2)
-            epoch = epoch - 1
-            cpu_samples_processed = cpu_samples_processed + 1
+            # count1 = count1 + (end2 - start2)
+            epoch -= 1
+            cpu_samples_processed += 1
             mini_batch_counter = 0
-            
+            f.write(", " + str(bl) + "), ")
+
+        if queue_read_event.is_set():
+            queue_read_event.clear() 
         # TODO: Overlap GPU sampling with the above process.
         # GPU UVA pipeline
         if epoch == 0:
             break
 
-        f.write("ggg(" + str(time.time()) + "),")
+        f.write("ggg(" + str(time.time()) + "), ")
+        print("GPU training")
 
         for it, (input_nodes, output_nodes, blocks) in enumerate(
             ggg_train_dataloader
@@ -441,7 +507,7 @@ def hybrid(dataset, epoch_, skip_mfg, mini_batches, sampler, batch, model, queue
             total_loss += loss.item()
             # count = count + )
             # continue
-        epoch = epoch - 1
+        epoch -= 1
         # end1 = end1 + count
         # print("GPU trained : ", count)
 
@@ -450,8 +516,9 @@ def hybrid(dataset, epoch_, skip_mfg, mini_batches, sampler, batch, model, queue
     print("Process ended")
     f.write("\n" + str(end - start - count - count1) + "," + str(bl) + "," +
     str(cpu_samples) + "," + str(cpu_samples_processed) + "\n")
-    
-def train(args, device, g, dataset, model, f, batch, epoch_, workers, sampler, skip_mfg):
+    f.close()
+
+def train(args, device, g, dataset, batch, epoch_, workers, sampler, skip_mfg):
     # create sampler & dataloader
 
     '''
@@ -464,38 +531,67 @@ def train(args, device, g, dataset, model, f, batch, epoch_, workers, sampler, s
     '''
     cpu_train_idx = dataset.train_idx
     mini_batches = (cpu_train_idx.shape[0] // batch) + 1
-    f = open("./cpu_samples.txt", "a")
+    # g.shared_memory()
+    # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    
+    # print("Parent ",torch.__path__)
+    # ctx = torch.multiprocessing.get_context('spawn')
+    # f = open("./cpu_samples.txt", "a")
     try:
-        with torch.multiprocessing.Pool(processes=2) as pool:
-            with torch.multiprocessing.Manager() as manager:
-                queue = manager.Queue()
-                done_event = manager.Event()
-                cpu_samples = manager.Value('i', 0)
-                cpu_args = (dataset, batch, workers, sampler, cpu_train_idx, skip_mfg, queue
-                            , done_event, cpu_samples)
-                gpu_args = (dataset, epoch_, skip_mfg, mini_batches, sampler, batch, model, queue,
-                             done_event, cpu_samples)
-                f.write("Process Launch : " + str(time.time()) + "\n")
-                tasks = [(cpu_sample, cpu_args), (hybrid, gpu_args)]
-                results = [pool.apply_async(func, args=args) for func, args in tasks]
-                for result in results:
-                    result.get()  # Wait for the task to complete
-    except Exception:
-        pool.terminate()
-        raise
-    finally:
-        pool.close()
-        pool.join()
+        queue1 = torch.multiprocessing.Queue()
+        queue1.cancel_join_thread()
+        process_launch_event = torch.multiprocessing.Event()
+        process_launch_event.set()
+        done_event = torch.multiprocessing.Event()
+        queue_read_event = torch.multiprocessing.Event()
+        cpu_samples = torch.multiprocessing.Value('i', 0)
 
-    print("Hello")
+        cpu_args = (g, batch, workers, sampler, cpu_train_idx, skip_mfg, queue1
+                    , done_event, queue_read_event, process_launch_event, cpu_samples, epoch_)
+        gpu_args = (g, epoch_, skip_mfg, mini_batches, sampler, batch, queue1
+                    , done_event, queue_read_event, process_launch_event, cpu_samples)
+        print("Process Launch : " + str(time.time()))
+        tasks = [(cpu_sample, cpu_args), (hybrid, gpu_args)]
+        # tasks = [(hybrid, gpu_args)]
+        processes = []
+        for func, args in tasks:
+            p = torch.multiprocessing.Process(target=func, args=args)
+            p.start()
+            print(p)
+            processes.append(p)
+        while not done_event.is_set():
+            continue
+        # queue1.close()
+        # queue1.join_thread()
+        time.sleep(5)
+        for p in processes:
+            p.terminate()
+    except Exception as e:
+        print("Error: ", e)
+    
+    # done_event = torch.multiprocessing.Event()
+    # th = threading.Thread(target=cpu_sample, args=(g, batch, workers, sampler, cpu_train_idx, skip_mfg
+    #                         , done_event, epoch_))
+    # th = threading.Thread(target=hybrid, args=(g, epoch_, skip_mfg, mini_batches, sampler, batch, model, done_event))
+    # th.start()
+    # hybrid(g, epoch_, skip_mfg, mini_batches, sampler, batch, model,
+                            #   done_event)
+    
+    # while not done_event.is_set():
+    #     continue
+    # th.join()
+    # print("Hello")
+
+# model training
 
 if __name__ == "__main__":
 
     # f = open('/mnt/utk/data/dgl-latest/sage_node_class_product.txt', "a")
-    f = open('./hybrid_fused_cgg_on_demand.txt', "a")
-    f = open('./tmp.txt', "a")
+    # f = open('./hybrid_fused_cgg_on_demand.txt', "a")
+    # f = open('./tmp.txt', "a")
     # torch.multiprocessing.set_start_method('spawn')
-    
+    # print("Main : ", torch.cuda.is_available())
+    # exit(0)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
@@ -504,56 +600,56 @@ if __name__ == "__main__":
         help="Training mode. 'cpu' for CPU training, 'mixed' for CPU-GPU mixed training, "
         "'puregpu' for pure-GPU training.",
     )
-    f1 = open('./hybrid_nbr_cgg_on_demand.txt', "a")
-    f2 = open('./hybrid_labor_cgg_on_demand.txt', "a")
+    # f1 = open('./hybrid_nbr_cgg_on_demand.txt', "a")
+    # f2 = open('./hybrid_labor_cgg_on_demand.txt', "a")
     parser.add_argument(
-      "--uva",
-      type=bool,
+        "--uva",
+        type=bool,
         default = True,
         choices = [True,False])
-    
+
     parser.add_argument(
-      "--pin_prefetcher",
-      type=bool,
+        "--pin_prefetcher",
+        type=bool,
         default = False,
         choices = [True,False])
 
     parser.add_argument(
-      "--alternate_streams",
-      type=bool,
-        default = False,
-        choices = [True,False])
-    
-    parser.add_argument(
-      "--prefetch_thread",
-      type=bool,
+        "--alternate_streams",
+        type=bool,
         default = False,
         choices = [True,False])
 
     parser.add_argument(
-      "--dataset",
-      type=str,
+        "--prefetch_thread",
+        type=bool,
+        default = False,
+        choices = [True,False])
+
+    parser.add_argument(
+        "--dataset",
+        type=str,
         default = "ogbn-papers100M",
         )
-    
+
     parser.add_argument(
-      "--batch_size",
-      type=int,
+        "--batch_size",
+        type=int,
         default = 8192,
         )
-    
+
     parser.add_argument(
-      "--epoch",
-      type=int,
+        "--epoch",
+        type=int,
         default = 10,
         )
-    
+
     parser.add_argument(
-      "--workers",
-      type=int,
+        "--workers",
+        type=int,
         default = 0,
         )
-    
+
     parser.add_argument(
         "--sampler",
         type=int,
@@ -564,38 +660,46 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip_mfg",
         type=int,
+        default=1,
     )
-    
+
     args = parser.parse_args()
-    if not torch.cuda.is_available():
-        args.mode = "cpu"
+    dataset = AsNodePredDataset(DglNodePropPredDataset(args.dataset, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/")
+                                    , save_dir="/disk1/tmp/")    
+    end = timer()
+    
+    g = dataset[0]
+    # print(g)
+    # print(g._graph)
+    # print(g._node_frames)
+    # for frames in g._node_frames:
+    #     for key, tensor in frames.items():
+    #         tensor.share_memory_()
+    g.create_formats_()
+    g.pin_memory_()
+    # print(g)
+    # exit(0)
+    g = g.to("cuda" if args.mode == "puregpu" else "cpu")
+    num_classes = dataset.num_classes
+    device = torch.device("cpu" if args.mode == "cpu" else "cuda")
+    # g.pin_memory_()
+    # create GraphSAGE model
+    g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
+
+    in_size = g.ndata["feat"].shape[1]
+    out_size = dataset.num_classes
+    # model = SAGE(in_size, 256, out_size).to(device)
+    
+    # if not torch.cuda.is_available():
+    #     args.mode = "cpu"
     print(f"Training in {args.mode} mode.")
     # load and preprocess dataset
     print("Loading data")
     start = timer()
-    
-    dataset = AsNodePredDataset(DglNodePropPredDataset(args.dataset, root="/storage/utk/dgl/examples/pytorch/graphsage/dataset/")
-                                , save_dir="/disk1/tmp/")    
-    end = timer()
-
-    g = dataset[0]
-    g = g.to("cuda" if args.mode == "puregpu" else "cpu")
-    num_classes = dataset.num_classes
-    device = torch.device("cpu" if args.mode == "cpu" else "cuda")
-    g.pin_memory_()
-    # create GraphSAGE model
-    # g.ndata["label"] = g.ndata["label"].type(torch.LongTensor)
-    in_size = g.ndata["feat"].shape[1]
-    out_size = dataset.num_classes
-    model = SAGE(in_size, 256, out_size).to(device)
-
-    # model training
-    print("Training...")
-    
+    device = "cuda"
     # f = f if args.sampler == 0 else f1 if args.sampler == 1 else f2
-    
-    f.write(str(args.batch_size) + "," + str(args.epoch) + ",")
-    train(args, device, g, dataset, model, f, args.batch_size, args.epoch, 
+    # f.write(str(args.batch_size) + "," + str(args.epoch) + ",")
+    train(args, device, g, dataset, args.batch_size, args.epoch, 
           args.workers, args.sampler, args.skip_mfg)
 
     exit(0) 
@@ -609,10 +713,3 @@ if __name__ == "__main__":
             f1.write(str(batch) + "," + str(epoch) + ",")
             train(args, device, g, dataset, model, num_classes, f1, batch, args.uva, args.pin_prefetcher, args.alternate_streams, args.prefetch_thread, epoch, 8)
         
-    # # test the model
-    # print("Testing...")
-    # acc = layerwise_infer(
-    #     device, g, dataset.test_idx, model, num_classes, batch_size=4096
-    # )
-    # print("Test Accuracy {:.4f}".format(acc.item()))
-    # f.close()

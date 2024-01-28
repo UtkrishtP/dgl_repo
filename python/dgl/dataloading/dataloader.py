@@ -545,13 +545,17 @@ def _prefetch(batch, dataloader, stream):
             skip_mfg : '1', we skip sending the MFG to the GPU.
         '''
         start = timer()
+        # for x in batch:
+        #     print(x.shape[0])
+            # for x1 in x:
+            #     print(x1.is_pinned())
         if dataloader.skip_mfg == 1:
             batch = recursive_apply(
                 batch, lambda x: x.to("cpu", non_blocking=True)
             )
         else:
             batch = recursive_apply(
-                batch, lambda x: x.to(dataloader.device, non_blocking=True)
+                batch, lambda x: x.to("cuda", non_blocking=True)
             )
             batch = recursive_apply(batch, _record_stream, current_stream)
     stream_event = stream.record_event() if stream is not None else None
@@ -790,6 +794,7 @@ class CollateWrapper(object):
         self.g = g
         self.use_uva = use_uva
         self.device = device
+        self.timer = 0
 
     def __call__(self, items):
         graph_device = getattr(self.g, "device", None)
@@ -802,8 +807,7 @@ class CollateWrapper(object):
         start = timer()
         batch = self.sample_func(self.g, items)
         end = timer()
-        global sample_
-        sample_ = sample_ + end - start
+        self.timer = self.timer + end - start
         return recursive_apply(batch, remove_parent_storage_columns, self.g)
 
 
@@ -1032,6 +1036,7 @@ class DataLoader(torch.utils.data.DataLoader):
         index_transfer=0,
         gather_pin_only=False,
         dataloader=None,
+        cfn=None,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1093,7 +1098,6 @@ class DataLoader(torch.utils.data.DataLoader):
         self.gpu_cache = gpu_cache # gpu_cache is defined but not initialized
         self.dataloader = dataloader
         num_workers = kwargs.get("num_workers", 0)
-
         indices_device = None
         try:
             if isinstance(indices, Mapping):
@@ -1127,7 +1131,6 @@ class DataLoader(torch.utils.data.DataLoader):
             else:
                 device = self.graph.device
         self.device = _get_device(device)
-
         # Sanity check - we only check for DGLGraphs.
         if isinstance(self.graph, DGLGraph):
             # Check graph and indices device as well as num_workers
@@ -1173,7 +1176,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 if use_prefetch_thread is None:
                     use_prefetch_thread = True
             else:
-                if pin_prefetcher is True:
+                if pin_prefetcher is True and not self.cgg:
                     raise ValueError(
                         "pin_prefetcher=True is only effective when device=cuda and "
                         "sampling is performed on CPU."
@@ -1181,7 +1184,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 if pin_prefetcher is None:
                     pin_prefetcher = False
 
-                if use_prefetch_thread is True:
+                if use_prefetch_thread is True and not self.cgg:
                     raise ValueError(
                         "use_prefetch_thread=True is only effective when device=cuda and "
                         "sampling is performed on CPU."
@@ -1235,14 +1238,18 @@ class DataLoader(torch.utils.data.DataLoader):
 
         self.other_storages = {}
 
+        # If the dataloader attribute doesn't have gpu_cache, then we initialize the gpu_cache
+        # Logic has been added for hybrid and will work for regular scenarios too.
         if not hasattr(dataloader, 'gpu_cache'):
             _init_gpu_caches(self.graph, gpu_cache) 
 
+        self.cfn = CollateWrapper(
+                self.graph_sampler.sample, graph, self.use_uva, self.device
+            )
+       
         super().__init__(
             self.dataset,
-            collate_fn=CollateWrapper(
-                self.graph_sampler.sample, graph, self.use_uva, self.device
-            ),
+            collate_fn = self.cfn,
             batch_size=None,
             pin_memory=self.pin_prefetcher,
             worker_init_fn=worker_init_fn,
@@ -1295,7 +1302,7 @@ class DataLoader(torch.utils.data.DataLoader):
         # When using multiprocessing PyTorch sometimes set the number of PyTorch threads to 1
         # when spawning new Python threads.  This drastically slows down pinning features.
         num_threads = torch.get_num_threads() if self.num_workers > 0 else None
-        
+        # num_threads = torch.get_num_threads()
         # At the start of new iteration reset the global var pre_nfeat, pre_mfg
         global pre_nfeat, pre_mfg, sample_
         if self.pre_nfeat == 0:

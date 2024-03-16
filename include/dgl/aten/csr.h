@@ -61,9 +61,12 @@ struct CSRMatrix {
         data(darr),
         sorted(sorted_flag) {
     if (!IsEmpty()) {
-      is_pinned = (aten::IsNullArray(indptr) || indptr.IsPinned()) &&
-                  (aten::IsNullArray(indices) || indices.IsPinned()) &&
-                  (aten::IsNullArray(data) || data.IsPinned());
+      // is_pinned = (aten::IsNullArray(indptr) || indptr.IsPinned()) &&
+      //             (aten::IsNullArray(indices) || indices.IsPinned()) &&
+      //             (aten::IsNullArray(data) || data.IsPinned());
+      is_pinned = (aten::IsNullArray(indptr)) &&
+                  (aten::IsNullArray(indices)) &&
+                  (aten::IsNullArray(data));
     }
     CheckValidity();
   }

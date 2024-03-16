@@ -65,9 +65,12 @@ struct COOMatrix {
         row_sorted(rsorted),
         col_sorted(csorted) {
     if (!IsEmpty()) {
-      is_pinned = (aten::IsNullArray(row) || row.IsPinned()) &&
-                  (aten::IsNullArray(col) || col.IsPinned()) &&
-                  (aten::IsNullArray(data) || data.IsPinned());
+      // is_pinned = (aten::IsNullArray(row) || row.IsPinned()) &&
+      //             (aten::IsNullArray(col) || col.IsPinned()) &&
+      //             (aten::IsNullArray(data) || data.IsPinned());
+      is_pinned = (aten::IsNullArray(row)) &&
+                  (aten::IsNullArray(col)) &&
+                  (aten::IsNullArray(data));
     }
     CheckValidity();
   }

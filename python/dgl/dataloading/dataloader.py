@@ -403,11 +403,11 @@ def _prefetch_update_feats(
                 if (parent_key, type_) in gpu_caches:
                     cache, item_shape = gpu_caches[parent_key, type_]
                     values, missing_index, missing_keys = cache.query(ids)
-                    # dataloader.transfer_mfg_gpu.clear()
+                    dataloader.transfer_mfg_gpu.clear()
                     missing_values = get_storage_func(parent_key, type_).fetch(
                         missing_keys, device, pin_prefetcher
                     )                        
-                    # dataloader.transfer_mfg_gpu.set()                         
+                    dataloader.transfer_mfg_gpu.set()                         
                     cache.replace(
                         missing_keys, F.astype(missing_values, F.float32)
                     )
@@ -1312,9 +1312,9 @@ class DataLoader(torch.utils.data.DataLoader):
             gpu_caches = self.graph._gpu_caches["node" if node_or_edge == "_N" else "edge"]
             cache, item_shape = gpu_caches[type, node_or_edge]
             values, missing_index, missing_keys = cache.query(ids)
-            # self.transfer_mfg_gpu.clear()
+            self.transfer_mfg_gpu.clear()
             missing_values = self.graph.get_node_storage(type, node_or_edge).fetch(missing_keys, self.device)
-            # self.transfer_mfg_gpu.set()                                 
+            self.transfer_mfg_gpu.set()                                 
             cache.replace(
                 missing_keys, F.astype(missing_values, F.float32)
             )

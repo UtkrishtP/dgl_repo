@@ -50,7 +50,7 @@ def _set_python_exit_flag():
 
 atexit.register(_set_python_exit_flag)
 
-prefetcher_timeout = int(os.environ.get("DGL_PREFETCHER_TIMEOUT", "30"))
+prefetcher_timeout = int(os.environ.get("DGL_PREFETCHER_TIMEOUT", "300"))
 
 
 class _TensorizedDatasetIter(object):
@@ -211,9 +211,10 @@ class TensorizedDataset(torch.utils.data.IterableDataset):
         # Use a shared memory array to permute indices for shuffling.  This is to make sure that
         # the worker processes can see it when persistent_workers=True, where self._indices
         # would not be duplicated every epoch.
-        self._indices = torch.arange(
-            self._id_tensor.shape[0], dtype=torch.int64
-        )
+        # self._indices = torch.arange(
+        #     self._id_tensor.shape[0], dtype=torch.int64
+        # )
+        self._indices = torch.tensor(range(self._id_tensor.shape[0]), dtype=torch.int64)
         if use_shared_memory:
             self._indices.share_memory_()
         self.batch_size = batch_size
@@ -372,7 +373,6 @@ def _init_gpu_caches(graph, gpu_caches):
 
 from ..utils import gather_pinned_tensor_rows
 
-index_transfer = 0
 
 def _prefetch_update_feats(
     feats,
@@ -398,22 +398,21 @@ def _prefetch_update_feats(
                         "and the graph does not have dgl.NID or dgl.EID columns"
                     )
                 ids = column.id_ or default_id
-
-                start = timer()
                 ids = ids.to(device, non_blocking=True) if dataloader.cgg == True else ids
-                end = timer()
-                global index_transfer
-                index_transfer = index_transfer + end - start
 
                 if (parent_key, type_) in gpu_caches:
                     cache, item_shape = gpu_caches[parent_key, type_]
                     values, missing_index, missing_keys = cache.query(ids)
+                    # dataloader.transfer_mfg_gpu.clear()
                     missing_values = get_storage_func(parent_key, type_).fetch(
                         missing_keys, device, pin_prefetcher
-                    )                                                 
+                    )                        
+                    # dataloader.transfer_mfg_gpu.set()                         
                     cache.replace(
                         missing_keys, F.astype(missing_values, F.float32)
                     )
+                    # with open('/media/utkrisht/deepgraph/examples/pytorch/graphsage/cache_stats1.txt', 'a') as file:
+                    #     file.write(f" {cache.total_miss}, {cache.total_queries}, {cache.total_miss / cache.total_queries :.3f}\n")
                     values = F.astype(values, F.dtype(missing_values))
                     F.scatter_row_inplace(values, missing_index, missing_values)
                     # Reshape the flattened result to match the original shape.
@@ -425,9 +424,9 @@ def _prefetch_update_feats(
                         If cgg is false, we are fetching graph features as per the mode set by the user,
                         else we are fetching node features using UVA
                     '''
-                    kwargs={'gather_pin_only': dataloader.gather_pin_only}
+                    # kwargs={'gather_pin_only': dataloader.gather_pin_only}
                     feats[tid, key] = get_storage_func(parent_key, type_).fetch(
-                        ids, device, pin_prefetcher, **kwargs
+                        ids, device, pin_prefetcher,
                     )
                                                                     
 
@@ -507,7 +506,7 @@ def _record_stream(x, stream):
 pre_nfeat = 0
 pre_mfg = 0
 sample_ = 0
-
+    
 def _prefetch(batch, dataloader, stream):
     # feats has the same nested structure of batch, except that
     # (1) each subgraph is replaced with a pair of node features and edge features, both
@@ -545,11 +544,7 @@ def _prefetch(batch, dataloader, stream):
             skip_mfg : '1', we skip sending the MFG to the GPU.
         '''
         start = timer()
-        # for x in batch:
-        #     print(x.shape[0])
-            # for x1 in x:
-            #     print(x1.is_pinned())
-        if dataloader.skip_mfg == 1:
+        if dataloader.skip_mfg == 1 or dataloader.device == torch.device("cpu"):
             batch = recursive_apply(
                 batch, lambda x: x.to("cpu", non_blocking=True)
             )
@@ -591,12 +586,27 @@ def _put_if_event_not_set(queue, result, event):
         except Full:
             continue
 
+import time
+import ctypes
+import threading
 
-def _prefetcher_entry(
-    dataloader_it, dataloader, queue, num_threads, stream, done_event
+def set_affinity(mask):
+    """Set CPU affinity for the current thread on Linux."""
+    libc = ctypes.CDLL("libc.so.6")
+    pthread_self = libc.pthread_self
+    pthread_self.restype = ctypes.c_void_p
+    pthread_setaffinity_np = libc.pthread_setaffinity_np
+    pthread_setaffinity_np.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_ulong)]
+    cpuset = ctypes.c_ulong(mask)
+    pthread_setaffinity_np(pthread_self(), ctypes.sizeof(cpuset), ctypes.byref(cpuset))
+
+def _prefetcher_entry(self,
+    dataloader_it, dataloader, queue, num_threads, stream, done_event, 
+    skip_mfg,
 ):
     # PyTorch will set the number of threads to 1 which slows down pin_memory() calls
     # in main process if a prefetching thread is created.
+    # set_affinity({1})
     if num_threads is not None:
         torch.set_num_threads(num_threads)
 
@@ -610,9 +620,26 @@ def _prefetcher_entry(
                 batch, restore_parent_storage_columns, dataloader.graph
             )
             batch, feats, stream_event = _prefetch(batch, dataloader, stream)
-            _put_if_event_not_set(
+            
+            if not skip_mfg: 
+                _put_if_event_not_set(
                 queue, (batch, feats, stream_event, None), done_event
             )
+            else:
+                s = time.time()
+                batch = recursive_apply_pair(batch, feats, _assign_for)
+                (a, b, c) = batch
+                _put_if_event_not_set(
+                queue, c, done_event
+                )
+                dataloader.insert_mfg.set()
+                e = time.time()
+                dataloader.index_transfer += e - s
+
+        if skip_mfg:
+            # To signal sampler to start next epoch.
+            dataloader.samples_ready.set()
+            return 
         _put_if_event_not_set(queue, (None, None, None, None), done_event)
     except:  # pylint: disable=bare-except
         _put_if_event_not_set(
@@ -673,9 +700,9 @@ def restore_parent_storage_columns(item, g):
                 subcol.storage = col.storage
     return item
 
-
 class _PrefetchingIter(object):
     def __init__(self, dataloader, dataloader_it, num_threads=None):
+        
         self.queue = Queue(1)
         self.dataloader_it = dataloader_it
         self.dataloader = dataloader
@@ -694,12 +721,16 @@ class _PrefetchingIter(object):
             thread = threading.Thread(
                 target=_prefetcher_entry,
                 args=(
+                    self,
                     dataloader_it,
                     dataloader,
-                    self.queue,
+                    dataloader.mfg_buffer if dataloader.skip_mfg else self.queue,
+                    # self.queue,
                     num_threads,
                     self.stream,
                     self._done_event,
+                    dataloader.skip_mfg,
+                    
                 ),
                 daemon=True,
             )
@@ -769,15 +800,13 @@ class _PrefetchingIter(object):
         batch = recursive_apply_pair(batch, feats, _assign_for)
         if stream_event is not None:
             stream_event.wait()
-        global pre_nfeat, pre_mfg, sample_, index_transfer
+        global pre_nfeat, pre_mfg, sample_
         #Update the prefetch time taken for nfeats/mfg.
         self.dataloader.pre_nfeat = pre_nfeat
         self.dataloader.pre_mfg = pre_mfg
 
         # Update the sampling time
         self.dataloader.sample = sample_
-
-        self.dataloader.index_transfer = index_transfer
         # Fetch the global variable using the getter function in pytorch_tensor.py
         self.dataloader.scatter = scatter_gather_()
         return batch
@@ -1036,7 +1065,11 @@ class DataLoader(torch.utils.data.DataLoader):
         index_transfer=0,
         gather_pin_only=False,
         dataloader=None,
+        mfg_buffer=None,
         cfn=None,
+        samples_ready=None,
+        insert_mfg=None,
+        transfer_mfg_gpu=None,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1065,7 +1098,6 @@ class DataLoader(torch.utils.data.DataLoader):
             self.use_alternate_streams = use_alternate_streams
             self.pin_prefetcher = pin_prefetcher
             self.use_uva = use_uva
-            self.index_transfer = index_transfer
             self.gather_pin_only = gather_pin_only
             kwargs["batch_size"] = None
             super().__init__(**kwargs)
@@ -1097,8 +1129,13 @@ class DataLoader(torch.utils.data.DataLoader):
         self.gather_pin_only = gather_pin_only
         self.gpu_cache = gpu_cache # gpu_cache is defined but not initialized
         self.dataloader = dataloader
+        self.index_transfer = index_transfer
         num_workers = kwargs.get("num_workers", 0)
         indices_device = None
+        self.samples_ready = samples_ready
+        self.insert_mfg = insert_mfg
+        self.mfg_buffer = mfg_buffer
+        self.transfer_mfg_gpu = transfer_mfg_gpu
         try:
             if isinstance(indices, Mapping):
                 indices = {
@@ -1134,7 +1171,7 @@ class DataLoader(torch.utils.data.DataLoader):
         # Sanity check - we only check for DGLGraphs.
         if isinstance(self.graph, DGLGraph):
             # Check graph and indices device as well as num_workers
-            if use_uva:
+            if use_uva and not cgg_on_demand and not cgg:
                 if self.graph.device.type != "cpu":
                     raise ValueError(
                         "Graph must be on CPU if UVA sampling is enabled."
@@ -1146,10 +1183,8 @@ class DataLoader(torch.utils.data.DataLoader):
 
                 # Create all the formats and pin the features - custom GraphStorages
                 # will need to do that themselves.
-                self.graph.create_formats_()
-                self.graph.pin_memory_()
             else:
-                if self.graph.device != indices_device:
+                if self.graph.device != indices_device and not cgg_on_demand and not cgg:
                     raise ValueError(
                         "Expect graph and indices to be on the same device when use_uva=False. "
                     )
@@ -1160,9 +1195,6 @@ class DataLoader(torch.utils.data.DataLoader):
                 if self.graph.device.type == "cpu" and num_workers > 0:
                     # Instantiate all the formats if the number of workers is greater than 0.
                     self.graph.create_formats_()
-                
-            if self.cgg == True or self.cgg_on_demand == True:
-                self.graph.pin_memory_()
 
             # Check pin_prefetcher and use_prefetch_thread - should be only effective
             # if performing CPU sampling but output device is CUDA
@@ -1176,7 +1208,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 if use_prefetch_thread is None:
                     use_prefetch_thread = True
             else:
-                if pin_prefetcher is True and not self.cgg:
+                if pin_prefetcher is True and not self.cgg and not self.cgg_on_demand:
                     raise ValueError(
                         "pin_prefetcher=True is only effective when device=cuda and "
                         "sampling is performed on CPU."
@@ -1184,7 +1216,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 if pin_prefetcher is None:
                     pin_prefetcher = False
 
-                if use_prefetch_thread is True and not self.cgg:
+                if use_prefetch_thread is True and not self.cgg and not self.cgg_on_demand:
                     raise ValueError(
                         "use_prefetch_thread=True is only effective when device=cuda and "
                         "sampling is performed on CPU."
@@ -1256,6 +1288,12 @@ class DataLoader(torch.utils.data.DataLoader):
             **kwargs,
         )
 
+        if isinstance(self.graph, DGLGraph):
+            # Check graph and indices device as well as num_workers
+            if use_uva or cgg_on_demand or cgg:
+                self.graph.create_formats_()
+                self.graph.pin_memory_()
+        
     def _cgg_on_demand(self, type, node_or_edge, ids):
         """ 
             Helper method for CGG on demand.
@@ -1274,10 +1312,14 @@ class DataLoader(torch.utils.data.DataLoader):
             gpu_caches = self.graph._gpu_caches["node" if node_or_edge == "_N" else "edge"]
             cache, item_shape = gpu_caches[type, node_or_edge]
             values, missing_index, missing_keys = cache.query(ids)
-            missing_values = self.graph.get_node_storage(type, node_or_edge).fetch(missing_keys, self.device)                                 
+            # self.transfer_mfg_gpu.clear()
+            missing_values = self.graph.get_node_storage(type, node_or_edge).fetch(missing_keys, self.device)
+            # self.transfer_mfg_gpu.set()                                 
             cache.replace(
                 missing_keys, F.astype(missing_values, F.float32)
             )
+            # with open('/media/utkrisht/deepgraph/examples/pytorch/graphsage/cache_stats1.txt', 'a') as file:
+            #     file.write(f" {cache.total_miss}, {cache.total_queries}, {cache.total_miss / cache.total_queries :.3f}\n")
             values = F.astype(values, F.dtype(missing_values))
             F.scatter_row_inplace(values, missing_index, missing_values)
             # Reshape the flattened result to match the original shape.
@@ -1297,6 +1339,8 @@ class DataLoader(torch.utils.data.DataLoader):
                 f"(see enable_cpu_affinity() or CPU best practices for DGL [{link}])"
             )
 
+        # if self.cgg or self.cgg_on_demand:
+        #         self.device = torch.device("cuda")
         if self.shuffle:
             self.dataset.shuffle()
         # When using multiprocessing PyTorch sometimes set the number of PyTorch threads to 1
@@ -1323,6 +1367,16 @@ class DataLoader(torch.utils.data.DataLoader):
             self, super().__iter__(), num_threads=num_threads
         )
 
+    def _begin_sampling(self,):
+        if self.shuffle:
+            self.dataset.shuffle()
+        
+        num_threads = torch.get_num_threads() if self.num_workers > 0 else None
+
+        return _PrefetchingIter(
+            self, super().__iter__(), num_threads=num_threads
+        )
+    
     @contextmanager
     def enable_cpu_affinity(
         self, loader_cores=None, compute_cores=None, verbose=True

@@ -217,6 +217,9 @@ class UnitGraph : public BaseHeteroGraph {
   /** @brief Copy the data to another context */
   static HeteroGraphPtr CopyTo(HeteroGraphPtr g, const DGLContext& ctx);
 
+  /** @brief Get totalsize of the MFG block */
+  static size_t totalSize(HeteroGraphPtr g, const DGLContext& ctx);
+
   /**
    * @brief Pin the in_csr_, out_scr_ and coo_ of the current graph.
    * @note The graph will be pinned inplace. Behavior depends on the current
@@ -401,6 +404,12 @@ class UnitGraph : public BaseHeteroGraph {
   dgl_format_code_t formats_;
   /** @brief which streams have recorded the graph */
   std::vector<DGLStreamHandle> recorded_streams;
+
+    // The following functions are used as getter for private members.
+  public:
+    CSRPtr get_in_csr() const { return in_csr_; }
+    CSRPtr get_out_csr() const { return out_csr_; }
+    COOPtr get_coo_() const { return coo_; }
 };
 
 };  // namespace dgl

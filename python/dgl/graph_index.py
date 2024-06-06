@@ -955,6 +955,9 @@ class GraphIndex(ObjectBase):
         return _CAPI_DGLImmutableGraphCopyTo(
             self, ctx.device_type, ctx.device_id
         )
+    
+    def get_mfg_size_(self, ctx):
+        return _CAPI_DGLGetMFGSize(self, ctx.device_type, ctx.device_id)
 
     def copyto_shared_mem(self, shared_mem_name):
         """Copy this immutable graph index to shared memory.

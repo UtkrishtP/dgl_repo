@@ -459,6 +459,7 @@ class UnitGraph::COO : public BaseHeteroGraph {
 /** @brief CSR graph */
 class UnitGraph::CSR : public BaseHeteroGraph {
  public:
+ 
   CSR(GraphPtr metagraph, int64_t num_src, int64_t num_dst, IdArray indptr,
       IdArray indices, IdArray edge_ids)
       : BaseHeteroGraph(metagraph) {
@@ -835,6 +836,9 @@ class UnitGraph::CSR : public BaseHeteroGraph {
 
   /** @brief internal adjacency matrix. Data array stores edge ids */
   aten::CSRMatrix adj_;
+
+  public:
+    aten::CSRMatrix get_adj() const { return adj_; }
 };
 
 //////////////////////////////////////////////////////////
@@ -1515,6 +1519,7 @@ UnitGraph::COOPtr UnitGraph::GetCOO(bool inplace) const {
   return ret;
 }
 
+// Reuse these getters to fetch aten::CSRMatrix / aten::COOMatrix
 aten::CSRMatrix UnitGraph::GetCSCMatrix(dgl_type_t etype) const {
   return GetInCSR()->adj();
 }
@@ -1527,6 +1532,46 @@ aten::COOMatrix UnitGraph::GetCOOMatrix(dgl_type_t etype) const {
   return GetCOO()->adj();
 }
 
+inline size_t GetDataSize(const DGLArray& arr) {
+  size_t size = 1;
+  for (dgl_index_t i = 0; i < arr.ndim; ++i) {
+    size *= arr.shape[i];
+  }
+  size *= (arr.dtype.bits * arr.dtype.lanes + 7) / 8;
+  return size;
+}
+
+size_t UnitGraph::totalSize(HeteroGraphPtr g, const DGLContext& ctx) {
+  auto bg = std::dynamic_pointer_cast<UnitGraph>(g);
+  CHECK_NOTNULL(bg);
+  size_t nbytes = 0;
+  dgl_type_t edge_type = 1;
+  nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indptr.operator->()));
+  nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indices.operator->()));
+  nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).data.operator->()));
+  nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indptr.operator->()));
+  nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indices.operator->()));
+  nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).data.operator->()));
+  nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).row.operator->()));
+  nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).col.operator->()));
+  nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).data.operator->()));
+  return nbytes;
+}
+
+bool isSpaceAvailable(){
+
+  /* 
+  // Define a new function within torch allocator to inspect free blocks per stream.
+
+  TensorDispatcher* tensor_dispatcher = TensorDispatcher::Global();
+    if (tensor_dispatcher->IsAvailable()) {
+      return tensor_dispatcher->getFreeBlocks(
+        nbytes, getCurrentCUDAStream());
+    }
+  */
+
+ return true;
+}
 HeteroGraphPtr UnitGraph::GetAny() const {
   if (in_csr_->defined()) {
     return in_csr_;

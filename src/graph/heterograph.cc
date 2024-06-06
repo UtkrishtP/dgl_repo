@@ -277,6 +277,16 @@ HeteroGraphPtr HeteroGraph::CopyTo(HeteroGraphPtr g, const DGLContext& ctx) {
       hgindex->meta_graph_, rel_graphs, hgindex->num_verts_per_type_));
 }
 
+size_t HeteroGraph::GetMFGSize(HeteroGraphPtr g, const DGLContext& ctx){
+  auto hgindex = std::dynamic_pointer_cast<HeteroGraph>(g);
+  CHECK_NOTNULL(hgindex);
+  size_t nbytes = 0;
+  std::vector<HeteroGraphPtr> rel_graphs;
+  for (auto g : hgindex->relation_graphs_) {
+    nbytes += UnitGraph::totalSize(g, ctx);
+  }
+  return nbytes;
+}
 HeteroGraphPtr HeteroGraph::PinMemory(HeteroGraphPtr g) {
   auto casted_ptr = std::dynamic_pointer_cast<HeteroGraph>(g);
   CHECK_NOTNULL(casted_ptr);

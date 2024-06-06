@@ -232,6 +232,9 @@ class HeteroGraph : public BaseHeteroGraph {
   /** @brief Copy the data to another context */
   static HeteroGraphPtr CopyTo(HeteroGraphPtr g, const DGLContext& ctx);
 
+  /** @brief Get the MFG sizes */
+  static size_t GetMFGSize(HeteroGraphPtr g, const DGLContext& ctx);
+
   /**
    * @brief Pin all relation graphs of the current graph.
    * @note The graph will be pinned inplace. Behavior depends on the current

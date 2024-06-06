@@ -253,6 +253,9 @@ class HeteroGraphIndex(ObjectBase):
             The graph index on the given device context.
         """
         return _CAPI_DGLHeteroCopyTo(self, ctx.device_type, ctx.device_id)
+    
+    def get_mfg_size_(self, ctx):
+        return _CAPI_DGLGetMFGSize(self, ctx.device_type, ctx.device_id)
 
     def pin_memory(self):
         """Copies the graph structure to pinned memory, if it's not already

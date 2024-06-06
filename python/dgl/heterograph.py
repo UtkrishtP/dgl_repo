@@ -5652,6 +5652,9 @@ class DGLGraph(object):
         The case of heterogeneous graphs is the same.
         """
         return F.to_backend_ctx(self._graph.ctx)
+    
+    def get_mfg_size(self, device, **kwargs):
+        return self._graph.get_mfg_size_(utils.to_dgl_context(device))
 
     def to(self, device, **kwargs):  # pylint: disable=invalid-name
         """Move ndata, edata and graph structure to the targeted device (cpu/gpu).
@@ -5708,18 +5711,21 @@ class DGLGraph(object):
         # 1. Copy graph structure
         ret._graph = self._graph.copy_to(utils.to_dgl_context(device))
 
+
         # 2. Copy features
         # TODO(minjie): handle initializer
+        import sys
         new_nframes = []
         for nframe in self._node_frames:
             new_nframes.append(nframe.to(device, **kwargs))
         ret._node_frames = new_nframes
+        # print(new_nframes)
+        # print(sys.getsizeof(new_nframes))
 
         new_eframes = []
         for eframe in self._edge_frames:
             new_eframes.append(eframe.to(device, **kwargs))
         ret._edge_frames = new_eframes
-
         # 2. Copy misc info
         if self._batch_num_nodes is not None:
             new_bnn = {
@@ -5727,13 +5733,13 @@ class DGLGraph(object):
                 for k, num in self._batch_num_nodes.items()
             }
             ret._batch_num_nodes = new_bnn
+            # print(new_bnn)
         if self._batch_num_edges is not None:
             new_bne = {
                 k: F.copy_to(num, device, **kwargs)
                 for k, num in self._batch_num_edges.items()
             }
             ret._batch_num_edges = new_bne
-
         return ret
 
     def cpu(self):

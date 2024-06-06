@@ -487,6 +487,18 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCopyTo")
       *rv = HeteroGraphRef(hg_new);
     });
 
+DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLGetMFGSize")
+    .set_body([](DGLArgs args, DGLRetValue* rv) {
+      HeteroGraphRef hg = args[0];
+      int device_type = args[1];
+      int device_id = args[2];
+      DGLContext ctx;
+      ctx.device_type = static_cast<DGLDeviceType>(device_type);
+      ctx.device_id = device_id;
+      size_t nbytes = HeteroGraph::GetMFGSize(hg.sptr(), ctx);
+      *rv = static_cast<int>(nbytes);
+  });
+  
 DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroPinMemory")
     .set_body([](DGLArgs args, DGLRetValue* rv) {
       HeteroGraphRef hg = args[0];

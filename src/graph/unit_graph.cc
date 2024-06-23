@@ -1303,12 +1303,14 @@ HeteroGraphPtr UnitGraph::CopyTo(HeteroGraphPtr g, const DGLContext& ctx) {
   } else {
     auto bg = std::dynamic_pointer_cast<UnitGraph>(g);
     CHECK_NOTNULL(bg);
-    CSRPtr new_incsr = (bg->in_csr_->defined())
-                           ? CSRPtr(new CSR(bg->in_csr_->CopyTo(ctx)))
-                           : nullptr;
-    CSRPtr new_outcsr = (bg->out_csr_->defined())
-                            ? CSRPtr(new CSR(bg->out_csr_->CopyTo(ctx)))
-                            : nullptr;
+    // CSRPtr new_incsr = (bg->in_csr_->defined())
+    //                        ? CSRPtr(new CSR(bg->in_csr_->CopyTo(ctx)))
+    //                        : nullptr;
+    // CSRPtr new_outcsr = (bg->out_csr_->defined())
+    //                         ? CSRPtr(new CSR(bg->out_csr_->CopyTo(ctx)))
+    //                         : nullptr;
+    CSRPtr new_incsr = nullptr;
+    CSRPtr new_outcsr = nullptr;
     COOPtr new_coo = (bg->coo_->defined())
                          ? COOPtr(new COO(bg->coo_->CopyTo(ctx)))
                          : nullptr;
@@ -1553,25 +1555,25 @@ size_t UnitGraph::totalSize(HeteroGraphPtr g, const DGLContext& ctx) {
   size_t nbytes = 0;
   // size_t count = 0;
   dgl_type_t edge_type = 1;
-  if (bg->out_csr_->defined()){
-    nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indptr.operator->()));
-    nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indices.operator->()));
-    // count += 2;
-    if (!(aten::IsNullArray((bg->GetCSRMatrix(edge_type)).data))) {
-      nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).data.operator->()));
-      // count += 1;
-    }
-  }
+  // if (bg->out_csr_->defined()){
+  //   nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indptr.operator->()));
+  //   nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indices.operator->()));
+  //   // count += 2;
+  //   if (!(aten::IsNullArray((bg->GetCSRMatrix(edge_type)).data))) {
+  //     nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).data.operator->()));
+  //     // count += 1;
+  //   }
+  // }
   
-  if (bg->in_csr_->defined()){
-    nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indptr.operator->()));
-    nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indices.operator->()));
-    // count += 2;
-    if (!(aten::IsNullArray((bg->GetCSCMatrix(edge_type)).data))) {
-      nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).data.operator->()));
-      // count += 1;
-    }
-  }
+  // if (bg->in_csr_->defined()){
+  //   nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indptr.operator->()));
+  //   nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indices.operator->()));
+  //   // count += 2;
+  //   if (!(aten::IsNullArray((bg->GetCSCMatrix(edge_type)).data))) {
+  //     nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).data.operator->()));
+  //     // count += 1;
+  //   }
+  // }
   
   if (bg->coo_->defined()){
     nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).row.operator->()));

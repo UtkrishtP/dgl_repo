@@ -4,7 +4,6 @@
  * @brief UnitGraph graph implementation
  */
 #include "./unit_graph.h"
-
 #include <dgl/array.h>
 #include <dgl/base_heterograph.h>
 #include <dgl/immutable_graph.h>
@@ -12,6 +11,13 @@
 
 #include "../c_api_common.h"
 #include "./serialize/dglstream.h"
+
+#include <cuda_runtime.h>
+#include <dgl/runtime/device_api.h>
+#include <dgl/runtime/registry.h>
+#include <dgl/runtime/tensordispatch.h>
+
+using TensorDispatcher = dgl::runtime::TensorDispatcher;
 
 namespace dgl {
 
@@ -1545,33 +1551,50 @@ size_t UnitGraph::totalSize(HeteroGraphPtr g, const DGLContext& ctx) {
   auto bg = std::dynamic_pointer_cast<UnitGraph>(g);
   CHECK_NOTNULL(bg);
   size_t nbytes = 0;
+  // size_t count = 0;
   dgl_type_t edge_type = 1;
-  nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indptr.operator->()));
-  nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indices.operator->()));
-  nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).data.operator->()));
-  nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indptr.operator->()));
-  nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indices.operator->()));
-  nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).data.operator->()));
-  nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).row.operator->()));
-  nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).col.operator->()));
-  nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).data.operator->()));
+  if (bg->out_csr_->defined()){
+    nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indptr.operator->()));
+    nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).indices.operator->()));
+    // count += 2;
+    if (!(aten::IsNullArray((bg->GetCSRMatrix(edge_type)).data))) {
+      nbytes += GetDataSize(*((bg->GetCSRMatrix(edge_type)).data.operator->()));
+      // count += 1;
+    }
+  }
+  
+  if (bg->in_csr_->defined()){
+    nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indptr.operator->()));
+    nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).indices.operator->()));
+    // count += 2;
+    if (!(aten::IsNullArray((bg->GetCSCMatrix(edge_type)).data))) {
+      nbytes += GetDataSize(*((bg->GetCSCMatrix(edge_type)).data.operator->()));
+      // count += 1;
+    }
+  }
+  
+  if (bg->coo_->defined()){
+    nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).row.operator->()));
+    nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).col.operator->()));
+    // count += 2;
+    if (!(aten::IsNullArray((bg->GetCOOMatrix(edge_type)).data))) {
+      nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).data.operator->()));
+      // count += 1;
+    }
+  }
+  // std::cout << "Count: " << count << std::endl;
   return nbytes;
 }
 
-bool isSpaceAvailable(){
-
-  /* 
-  // Define a new function within torch allocator to inspect free blocks per stream.
-
+// Define a new function within torch allocator to inspect free blocks per stream.
+bool isSpaceAvailable_(size_t nbytes){
   TensorDispatcher* tensor_dispatcher = TensorDispatcher::Global();
     if (tensor_dispatcher->IsAvailable()) {
-      return tensor_dispatcher->getFreeBlocks(
-        nbytes, getCurrentCUDAStream());
+      return tensor_dispatcher->CUDAGetStreamBasedSpace_(
+        nbytes, tensor_dispatcher->CUDAGetCurrentStream());
     }
-  */
-
- return true;
 }
+
 HeteroGraphPtr UnitGraph::GetAny() const {
   if (in_csr_->defined()) {
     return in_csr_;

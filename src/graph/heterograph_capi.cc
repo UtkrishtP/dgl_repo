@@ -496,7 +496,7 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLGetMFGSize")
       ctx.device_type = static_cast<DGLDeviceType>(device_type);
       ctx.device_id = device_id;
       size_t nbytes = HeteroGraph::GetMFGSize(hg.sptr(), ctx);
-      *rv = static_cast<int>(nbytes);
+      *rv = static_cast<double>(nbytes);
   });
   
 DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroPinMemory")

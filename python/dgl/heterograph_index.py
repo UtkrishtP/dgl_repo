@@ -255,7 +255,11 @@ class HeteroGraphIndex(ObjectBase):
         return _CAPI_DGLHeteroCopyTo(self, ctx.device_type, ctx.device_id)
     
     def get_mfg_size_(self, ctx):
-        return _CAPI_DGLGetMFGSize(self, ctx.device_type, ctx.device_id)
+         ret =_CAPI_DGLGetMFGSize(self, ctx.device_type, ctx.device_id)
+         return [F.from_dgl_nd(v) for v in ret]
+    
+    def is_space_available_(self, ctx):
+        return _CAPI_DGLIsSpaceAvailable(self, ctx.device_type, ctx.device_id)
 
     def pin_memory(self):
         """Copies the graph structure to pinned memory, if it's not already

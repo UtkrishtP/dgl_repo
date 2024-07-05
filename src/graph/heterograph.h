@@ -233,8 +233,10 @@ class HeteroGraph : public BaseHeteroGraph {
   static HeteroGraphPtr CopyTo(HeteroGraphPtr g, const DGLContext& ctx);
 
   /** @brief Get the MFG sizes */
-  static size_t GetMFGSize(HeteroGraphPtr g, const DGLContext& ctx);
+  static IdArray GetMFGSize(HeteroGraphPtr g, const DGLContext& ctx);
 
+  /** @brief Query if we have nbytes available per stream */
+  static bool isSpaceAvailable(size_t nbytes);
   /**
    * @brief Pin all relation graphs of the current graph.
    * @note The graph will be pinned inplace. Behavior depends on the current

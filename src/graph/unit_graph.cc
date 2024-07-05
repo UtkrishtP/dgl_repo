@@ -1549,10 +1549,10 @@ inline size_t GetDataSize(const DGLArray& arr) {
   return size;
 }
 
-size_t UnitGraph::totalSize(HeteroGraphPtr g, const DGLContext& ctx) {
+IdArray UnitGraph::totalSize(HeteroGraphPtr g, const DGLContext& ctx) {
   auto bg = std::dynamic_pointer_cast<UnitGraph>(g);
   CHECK_NOTNULL(bg);
-  size_t nbytes = 0;
+  std::vector<int64_t> nbytes;
   // size_t count = 0;
   dgl_type_t edge_type = 1;
   // if (bg->out_csr_->defined()){
@@ -1574,22 +1574,26 @@ size_t UnitGraph::totalSize(HeteroGraphPtr g, const DGLContext& ctx) {
   //     // count += 1;
   //   }
   // }
-  
+  for(int i = 0; i < 3; i++)
+    nbytes.push_back(0);
+
   if (bg->coo_->defined()){
-    nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).row.operator->()));
-    nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).col.operator->()));
+    nbytes[0] = GetDataSize(*((bg->GetCOOMatrix(edge_type)).row.operator->()));
+    nbytes[1] = GetDataSize(*((bg->GetCOOMatrix(edge_type)).col.operator->()));
     // count += 2;
     if (!(aten::IsNullArray((bg->GetCOOMatrix(edge_type)).data))) {
-      nbytes += GetDataSize(*((bg->GetCOOMatrix(edge_type)).data.operator->()));
+      nbytes[2] = GetDataSize(*((bg->GetCOOMatrix(edge_type)).data.operator->()));
       // count += 1;
     }
   }
   // std::cout << "Count: " << count << std::endl;
-  return nbytes;
+
+  return VecToIdArray(nbytes, 64, ctx);
+  
 }
 
 // Define a new function within torch allocator to inspect free blocks per stream.
-bool isSpaceAvailable_(size_t nbytes){
+bool UnitGraph::isSpaceAvailable_(size_t nbytes){
   TensorDispatcher* tensor_dispatcher = TensorDispatcher::Global();
     if (tensor_dispatcher->IsAvailable()) {
       return tensor_dispatcher->CUDAGetStreamBasedSpace_(

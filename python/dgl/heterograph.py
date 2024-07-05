@@ -5656,6 +5656,9 @@ class DGLGraph(object):
     def get_mfg_size(self, device, **kwargs):
         return self._graph.get_mfg_size_(utils.to_dgl_context(device))
 
+    def is_space_available(self, device, **kwargs):
+        return self._graph.is_space_available_(utils.to_dgl_context(device))
+    
     def to(self, device, **kwargs):  # pylint: disable=invalid-name
         """Move ndata, edata and graph structure to the targeted device (cpu/gpu).
 

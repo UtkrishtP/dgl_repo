@@ -218,8 +218,10 @@ class UnitGraph : public BaseHeteroGraph {
   static HeteroGraphPtr CopyTo(HeteroGraphPtr g, const DGLContext& ctx);
 
   /** @brief Get totalsize of the MFG block */
-  static size_t totalSize(HeteroGraphPtr g, const DGLContext& ctx);
+  static IdArray totalSize(HeteroGraphPtr g, const DGLContext& ctx);
 
+  /** @brief Query per stream if *nbytes* is available */
+  static bool isSpaceAvailable_(size_t nbytes);
   /**
    * @brief Pin the in_csr_, out_scr_ and coo_ of the current graph.
    * @note The graph will be pinned inplace. Behavior depends on the current

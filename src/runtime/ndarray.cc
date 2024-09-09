@@ -174,7 +174,21 @@ NDArray NDArray::EmptyShared(
   } else {
     ret.data_->dl_tensor.data = mem->Open(size);
   }
+  ret.data_->mem = mem;
+  return ret;
+}
 
+NDArray NDArray::EmptySharedHybrid(
+    const std::string& name, std::vector<int64_t> shape, DGLDataType dtype,
+    DGLContext ctx, bool is_create) {
+  NDArray ret = Internal::Create(shape, dtype, ctx);
+  size_t size = GetDataSize(ret.data_->dl_tensor);
+  auto mem = std::make_shared<SharedMemory>(name);
+  if (is_create) {
+    ret.data_->dl_tensor.data = mem->CreateHybrid(size);
+  } else {
+    ret.data_->dl_tensor.data = mem->OpenHybrid(size);
+  }
   ret.data_->mem = mem;
   return ret;
 }

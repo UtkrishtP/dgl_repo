@@ -641,7 +641,7 @@ template std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFused<int32_t, false>(
 template <typename IdType, bool map_seed_nodes>
 std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid(
     CSRMatrix mat, IdArray rows, IdArray seed_mapping,
-    std::vector<IdType>* new_seed_nodes, int64_t num_samples,std::string name,
+    std::vector<IdType>* new_seed_nodes, int64_t num_samples,
     NDArray prob_or_mask, bool replace) {
   std::pair<CSRMatrix, IdArray> ret;
   if (IsNullArray(prob_or_mask)) {
@@ -649,7 +649,7 @@ std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid(
         rows->ctx.device_type, XPU, "CSRRowWiseSamplingUniformFusedhHybrid", {
           ret =
               impl::CSRRowWiseSamplingUniformFusedHybrid<XPU, IdType, map_seed_nodes>(
-                  mat, rows, seed_mapping, new_seed_nodes, num_samples, name,
+                  mat, rows, seed_mapping, new_seed_nodes, num_samples,
                   replace);
         });
   } else {
@@ -660,7 +660,7 @@ std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid(
             ret = impl::CSRRowWiseSamplingFusedHybrid<
                 XPU, IdType, FloatType, map_seed_nodes>(
                 mat, rows, seed_mapping, new_seed_nodes, num_samples,
-                prob_or_mask, name, replace);
+                prob_or_mask, replace);
           });
     });
   }
@@ -668,16 +668,16 @@ std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid(
 }
 
 template std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid<int64_t, true>(
-    CSRMatrix, IdArray, IdArray, std::vector<int64_t>*, int64_t, std::string, NDArray, bool);
+    CSRMatrix, IdArray, IdArray, std::vector<int64_t>*, int64_t, NDArray, bool);
 
 template std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid<int64_t, false>(
-    CSRMatrix, IdArray, IdArray, std::vector<int64_t>*, int64_t, std::string, NDArray, bool);
+    CSRMatrix, IdArray, IdArray, std::vector<int64_t>*, int64_t, NDArray, bool);
 
 template std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid<int32_t, true>(
-    CSRMatrix, IdArray, IdArray, std::vector<int32_t>*, int64_t, std::string, NDArray, bool);
+    CSRMatrix, IdArray, IdArray, std::vector<int32_t>*, int64_t, NDArray, bool);
 
 template std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid<int32_t, false>(
-    CSRMatrix, IdArray, IdArray, std::vector<int32_t>*, int64_t, std::string, NDArray, bool);
+    CSRMatrix, IdArray, IdArray, std::vector<int32_t>*, int64_t, NDArray, bool);
 
 COOMatrix CSRRowWisePerEtypeSampling(
     CSRMatrix mat, IdArray rows, const std::vector<int64_t>& eid2etype_offset,

@@ -235,8 +235,6 @@ class HeteroGraph : public BaseHeteroGraph {
   /** @brief Get the MFG sizes */
   static IdArray GetMFGSize(HeteroGraphPtr g, const DGLContext& ctx);
 
-  /** @brief Query if we have nbytes available per stream */
-  static bool isSpaceAvailable(size_t nbytes);
   /**
    * @brief Pin all relation graphs of the current graph.
    * @note The graph will be pinned inplace. Behavior depends on the current
@@ -283,6 +281,18 @@ class HeteroGraph : public BaseHeteroGraph {
       const std::set<std::string>& fmts);
 
   /**
+   * @brief Copy the data to GPU shared memory.
+   *
+   * Also save names of node types and edge types of the HeteroGraph object to
+   * shared memory
+   */
+  static HeteroGraphPtr CopyToGPUSharedMem(
+      HeteroGraphPtr g, const std::string& name,
+      const std::vector<std::string>& ntypes,
+      const std::vector<std::string>& etypes,
+      const std::set<std::string>& fmts);
+
+  /**
    * @brief Create a heterograph from
    *
    * @return the HeteroGraphPtr, names of node types, names of edge types
@@ -291,6 +301,19 @@ class HeteroGraph : public BaseHeteroGraph {
       HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>>
   CreateFromSharedMem(const std::string& name);
 
+static std::tuple<
+      HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>, std::vector<IdArray>>
+  CreateFromSharedMemHybrid(const int name);
+  
+  /**
+   * @brief Create a heterograph from
+   *
+   * @return the HeteroGraphPtr in GPU, names of node types, names of edge types
+   */
+  static std::tuple<
+      HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>>
+  CreateFromGPUSharedMem(const std::string& name);
+
   /** @brief Creat a LineGraph of self */
   HeteroGraphPtr LineGraph(bool backtracking) const;
 
@@ -298,6 +321,8 @@ class HeteroGraph : public BaseHeteroGraph {
     return relation_graphs_;
   }
 
+  std::shared_ptr<runtime::SharedMemory> shared_mem_;
+  std::vector<IdArray> induced_vertices;
  private:
   // To create empty class
   friend class Serializer;
@@ -312,7 +337,7 @@ class HeteroGraph : public BaseHeteroGraph {
   std::vector<int64_t> num_verts_per_type_;
 
   /** @brief The shared memory object for meta info*/
-  std::shared_ptr<runtime::SharedMemory> shared_mem_;
+  // std::shared_ptr<runtime::SharedMemory> shared_mem_;
 
   /**
    * @brief The name of the shared memory. Return empty string if it is not in

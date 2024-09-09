@@ -82,12 +82,26 @@ COOMatrix SharedMemManager::CopyToSharedMem<COOMatrix>(
 }
 
 template <>
+COOMatrix SharedMemManager::CopyToGPUSharedMem<COOMatrix>(
+    const COOMatrix &coo, std::string name) {
+  auto row_shared_mem = CopyToSharedMem(coo.row, name + "_row");
+  auto col_shared_mem = CopyToSharedMem(coo.col, name + "_col");
+  auto data_shared_mem = CopyToSharedMem(coo.data, name + "_data");
+  strm_->Write(coo.num_rows);
+  strm_->Write(coo.num_cols);
+  strm_->Write(coo.row_sorted);
+  strm_->Write(coo.col_sorted);
+  return COOMatrix(
+      coo.num_rows, coo.num_cols, row_shared_mem, col_shared_mem,
+      data_shared_mem, coo.row_sorted, coo.col_sorted);
+}
+
+template <>
 bool SharedMemManager::CreateFromSharedMem<NDArray>(
     NDArray *nd, std::string name) {
   int ndim;
   DGLContext ctx = {kDGLCPU, 0};
   DGLDataType dtype;
-
   CHECK(this->Read(&ndim)) << "Invalid DGLArray file format";
   CHECK(this->Read(&dtype)) << "Invalid DGLArray file format";
 
@@ -111,6 +125,7 @@ bool SharedMemManager::CreateFromSharedMem<COOMatrix>(
   CreateFromSharedMem(&coo->row, name + "_row");
   CreateFromSharedMem(&coo->col, name + "_col");
   CreateFromSharedMem(&coo->data, name + "_data");
+  coo->data = NDArray::Empty({0}, coo->row->dtype, coo->row->ctx);
   strm_->Read(&coo->num_rows);
   strm_->Read(&coo->num_cols);
   strm_->Read(&coo->row_sorted);
@@ -130,4 +145,41 @@ bool SharedMemManager::CreateFromSharedMem<CSRMatrix>(
   return true;
 }
 
+template <>
+bool SharedMemManager::CreateFromSharedMemHybrid<NDArray>(
+    NDArray *nd, std::string name) {
+  int ndim;
+  DGLContext ctx = {kDGLCPU, 0};
+  DGLDataType dtype;
+  CHECK(this->Read(&ndim)) << "Invalid DGLArray file format";
+  CHECK(this->Read(&dtype)) << "Invalid DGLArray file format";
+
+  std::vector<int64_t> shape(ndim);
+  if (ndim != 0) {
+    CHECK(this->ReadArray(&shape[0], ndim)) << "Invalid DGLArray file format";
+  }
+  bool is_null;
+  this->Read(&is_null);
+  if (is_null) {
+    *nd = NDArray::Empty(shape, dtype, ctx);
+  } else {
+    *nd = NDArray::EmptySharedHybrid(graph_name_ + name, shape, dtype, ctx, false);
+  }
+  return true;
+}
+
+template <>
+bool SharedMemManager::CreateFromSharedMemHybrid<COOMatrix>(
+    COOMatrix *coo, std::string name) {
+  CreateFromSharedMemHybrid(&coo->row, name + "_row");
+  CreateFromSharedMemHybrid(&coo->col, name + "_col");
+  // std::cout << "Shared data \n";
+  // CreateFromSharedMem(&coo->data, name + "_data");
+  coo->data = NDArray::Empty({0}, coo->row->dtype, coo->row->ctx);
+  strm_->Read(&coo->num_rows);
+  strm_->Read(&coo->num_cols);
+  strm_->Read(&coo->row_sorted);
+  strm_->Read(&coo->col_sorted);
+  return true;
+}
 }  // namespace dgl

@@ -33,11 +33,13 @@ class SharedMemory {
   /* @brief the file descripter of the shared memory. */
 #ifndef _WIN32
   int fd_;
+  int fd__;
 #else   // !_WIN32
   HANDLE handle_;
 #endif  // _WIN32
   /* @brief the address of the shared memory. */
   void *ptr_;
+  void *ptr__;
   /* @brief the size of the shared memory. */
   size_t size_;
 
@@ -71,13 +73,14 @@ class SharedMemory {
    * @return the address of the shared memory
    */
   void *CreateNew(size_t sz);
+  void *CreateHybrid(size_t sz);
   /**
    * @brief allocate shared memory that has been created.
    * @param sz the size of the shared memory.
    * @return the address of the shared memory
    */
   void *Open(size_t sz);
-
+  void *OpenHybrid(size_t sz);
   /**
    * @brief check if the shared memory exist.
    * @param name the name of the shared memory.

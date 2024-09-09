@@ -13,6 +13,7 @@ from .heterograph import combine_frames, DGLBlock, DGLGraph
 __all__ = [
     "graph",
     "hetero_from_shared_memory",
+    "hetero_from_shared_memory_hybrid",
     "heterograph",
     "create_block",
     "block_to_graph",
@@ -182,6 +183,24 @@ def graph(
 
     return g.to(device)
 
+def hetero_from_gpu_shared_memory(name):
+    """Create a heterograph using shared memory in GPU.
+    Store the IPC handle and metadata in shared memory in CPU. (/dev/shm)
+
+
+    Paramaters
+    ----------
+    name : str
+        The name of the share memory
+
+    Returns
+    -------
+    HeteroGraph (in shared memory)
+    """
+    g, ntypes, etypes = heterograph_index.create_heterograph_from_gpu_shared_memory(
+        name
+    )
+    return DGLBlock(g, ntypes, etypes)
 
 def hetero_from_shared_memory(name):
     """Create a heterograph from shared memory with the given name.
@@ -202,6 +221,28 @@ def hetero_from_shared_memory(name):
         name
     )
     return DGLGraph(g, ntypes, etypes)
+
+def hetero_from_shared_memory_hybrid(layer, offset):
+    """Create a heterograph from shared memory with the given name.
+
+    The newly created graph will have the same node types and edge types as the original graph.
+    But it does not have node features or edges features.
+
+    Paramaters
+    ----------
+    name : str
+        The name of the share memory
+
+    Returns
+    -------
+    HeteroGraph (in shared memory)
+    """
+    g, ntypes, etypes, induced_vertices = heterograph_index.create_heterograph_from_shared_memory_hybrid(
+        layer, offset
+    )
+    src_node_ids = [F.from_dgl_nd(src) for src in induced_vertices]
+    # We need to create a DGLBlock object here other wise {sageconv.py: 213} will fail.
+    return DGLBlock(g, ntypes, etypes), src_node_ids
 
 
 def heterograph(data_dict, num_nodes_dict=None, idtype=None, device=None):

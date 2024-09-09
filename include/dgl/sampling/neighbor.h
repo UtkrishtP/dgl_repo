@@ -97,6 +97,13 @@ SampleNeighborsFused(
     EdgeDir dir, const std::vector<NDArray>& prob_or_mask,
     const std::vector<IdArray>& exclude_edges, bool replace = true);
 
+template <typename IdType>
+std::tuple<HeteroGraphPtr, std::vector<IdArray>, std::vector<IdArray>>
+SampleNeighborsFusedHybrid(
+    const HeteroGraphPtr hg, const std::vector<IdArray>& nodes,
+    const std::vector<IdArray>& mapping, const std::vector<int64_t>& fanouts,
+    EdgeDir dir, const std::vector<NDArray>& prob_or_mask,
+    const std::vector<IdArray>& exclude_edges, const int layer, bool replace = true);
 /**
  * Select the neighbors with k-largest weights on the connecting edges for each
  * given node.

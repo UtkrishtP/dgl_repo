@@ -9,7 +9,7 @@ from .._ffi.function import _init_api
 from ..base import DGLError, EID
 from ..heterograph import DGLBlock, DGLGraph
 from .utils import EidExcluder
-
+from ..ndarray import create_shared_mem_array
 __all__ = [
     "sample_etype_neighbors",
     "sample_neighbors",
@@ -395,6 +395,10 @@ def sample_neighbors_fused(
     copy_edata=True,
     exclude_edges=None,
     mapping=None,
+    hybrid=False,
+    array=None,
+    offset=None,
+    layer=0,
 ):
     """Sample neighboring edges of the given nodes and return the induced subgraph.
 
@@ -484,6 +488,10 @@ def sample_neighbors_fused(
             exclude_edges=exclude_edges,
             fused=True,
             mapping=mapping,
+            hybrid=hybrid,
+            array=array,
+            offset=offset,
+            layer=layer,
         )
     else:
         frontier = _sample_neighbors(
@@ -497,6 +505,10 @@ def sample_neighbors_fused(
             copy_edata=copy_edata,
             fused=True,
             mapping=mapping,
+            hybrid=hybrid,
+            array=array,
+            offset=offset,
+            layer=layer,
         )
         if exclude_edges is not None:
             eid_excluder = EidExcluder(exclude_edges)
@@ -517,6 +529,10 @@ def _sample_neighbors(
     exclude_edges=None,
     fused=False,
     mapping=None,
+    hybrid=False,
+    array=None,
+    offset=None,
+    layer=0,
 ):
     if not isinstance(nodes, dict):
         if len(g.ntypes) > 1:
@@ -599,17 +615,33 @@ def _sample_neighbors(
                 torch.LongTensor(g.num_nodes(ntype)).fill_(-1)
                 for ntype in g.ntypes
             ]
-
-        subgidx, induced_nodes, induced_edges = _CAPI_DGLSampleNeighborsFused(
-            g._graph,
-            nodes_all_types,
-            [F.to_dgl_nd(m) for m in mapping[mapping_name]],
-            fanout_array,
-            edge_dir,
-            prob_arrays,
-            excluded_edges_all_t,
-            replace,
-        )
+        subgidx, induced_nodes, induced_edges = 0,0,0
+        if not hybrid:
+            subgidx, induced_nodes, induced_edges = _CAPI_DGLSampleNeighborsFused(
+                g._graph,
+                nodes_all_types,
+                [F.to_dgl_nd(m) for m in mapping[mapping_name]],
+                fanout_array,
+                edge_dir,
+                prob_arrays,
+                excluded_edges_all_t,
+                replace,
+            )
+        else:
+        # print(shm_file_name)
+            subgidx, induced_nodes, induced_edges = _CAPI_DGLSampleNeighborsFusedHybrid(
+                g._graph,
+                nodes_all_types,
+                [F.to_dgl_nd(m) for m in mapping[mapping_name]],
+                fanout_array,
+                edge_dir,
+                prob_arrays,
+                excluded_edges_all_t,
+                replace,
+                layer,
+                array,
+                offset,
+            )
         for mapping_vector, src_nodes in zip(
             mapping[mapping_name], induced_nodes
         ):

@@ -641,6 +641,11 @@ std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFused(
     std::vector<IdType>* new_seed_nodes, int64_t num_samples,
     NDArray prob_or_mask = NDArray(), bool replace = true);
 
+template <typename IdType, bool map_seed_nodes>
+std::pair<CSRMatrix, IdArray> CSRRowWiseSamplingFusedHybrid(
+    CSRMatrix mat, IdArray rows, IdArray seed_mapping,
+    std::vector<IdType>* new_seed_nodes, int64_t num_samples,
+    NDArray prob_or_mask = NDArray(), bool replace = true);
 /**
  * @brief Randomly select a fixed number of non-zero entries for each edge type
  *        along each given row independently.

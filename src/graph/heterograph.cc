@@ -14,7 +14,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
-
+#include "../runtime/cuda/cuda_common.h"
 using namespace dgl::runtime;
 
 namespace dgl {
@@ -288,10 +288,6 @@ IdArray HeteroGraph::GetMFGSize(HeteroGraphPtr g, const DGLContext& ctx){
   return nbytes;
 }
 
-bool HeteroGraph::isSpaceAvailable(size_t nbytes){
-  return UnitGraph::isSpaceAvailable_(nbytes);
-}
-
 HeteroGraphPtr HeteroGraph::PinMemory(HeteroGraphPtr g) {
   auto casted_ptr = std::dynamic_pointer_cast<HeteroGraph>(g);
   CHECK_NOTNULL(casted_ptr);
@@ -333,6 +329,92 @@ std::string HeteroGraph::SharedMemName() const {
   return shared_mem_ ? shared_mem_->GetName() : "";
 }
 
+HeteroGraphPtr HeteroGraph::CopyToGPUSharedMem(
+    HeteroGraphPtr g, const std::string& name,
+    const std::vector<std::string>& ntypes,
+    const std::vector<std::string>& etypes, const std::set<std::string>& fmts) {
+
+  auto hg = std::dynamic_pointer_cast<HeteroGraph>(g);
+  CHECK_NOTNULL(hg);
+  if (hg->SharedMemName() == name) return g;
+
+  // Copy buffer to share memory
+  auto mem = std::make_shared<SharedMemory>(name);
+  auto mem_buf = mem->CreateNew(SHARED_MEM_GPU_METAINFO_SIZE_MAX);
+  dmlc::MemoryFixedSizeStream strm(mem_buf, SHARED_MEM_GPU_METAINFO_SIZE_MAX);
+  SharedMemManager shm(name, &strm);
+
+  bool has_coo = fmts.find("coo") != fmts.end();
+  bool has_csr = fmts.find("csr") != fmts.end();
+  bool has_csc = fmts.find("csc") != fmts.end();
+  shm.Write(g->NumBits());
+  shm.Write(has_coo);
+  shm.Write(has_csr);
+  shm.Write(has_csc);
+  shm.Write(ImmutableGraph::ToImmutable(hg->meta_graph_));
+  shm.Write(hg->num_verts_per_type_);
+
+  std::vector<HeteroGraphPtr> relgraphs(g->NumEdgeTypes());
+
+  for (dgl_type_t etype = 0; etype < g->NumEdgeTypes(); ++etype) {
+    auto src_dst_type = g->GetEndpointTypes(etype);
+    int num_vtypes = (src_dst_type.first == src_dst_type.second ? 1 : 2);
+    aten::COOMatrix coo;
+    aten::CSRMatrix csr, csc;
+    std::string prefix = name + "_" + std::to_string(etype);
+    if (has_coo) {
+      // coo = shm.CopyToSharedMem(hg->GetCOOMatrix(etype), prefix + "_coo");
+      auto _coo = hg->GetCOOMatrix(etype);
+      cudaIpcMemHandle_t mem_handle, mem_handle_;
+  
+      CUDA_CALL(cudaIpcGetMemHandle(&mem_handle, (*(_coo).row.operator->()).data));
+  
+      shm.Write((_coo.row)->ndim);
+      shm.Write((_coo.row)->dtype);
+      int ndim = (_coo.row)->ndim;
+      shm.WriteArray((_coo.row)->shape, ndim);
+      shm.Write(&mem_handle);
+      // nbytes[1] = GetDataSize(*((hg->GetCOOMatrix(edge_type)).col.operator->()));
+  
+      CUDA_CALL(cudaIpcGetMemHandle(&mem_handle_, (*(_coo).col.operator->()).data));
+      shm.Write((_coo.col)->ndim);
+      shm.Write((_coo.col)->dtype);
+      ndim = (_coo.col)->ndim;
+      shm.WriteArray((_coo.col)->shape, ndim);
+      shm.Write(&mem_handle_);
+
+      shm.Write(_coo.num_rows);
+      shm.Write(_coo.num_cols);
+      shm.Write(_coo.row_sorted);
+      shm.Write(_coo.col_sorted);
+  
+      // coo = COOMatrix(_coo.num_rows, _coo.num_cols, row_shared_mem, col_shared_mem,
+      // data_shared_mem, _coo.row_sorted, _coo.col_sorted);
+    //   if (!(aten::IsNullArray((hg->GetCOOMatrix(edge_type)).data))) {
+    //     nbytes[2] = GetDataSize(*((hg->GetCOOMatrix(edge_type)).data.operator->()));
+    // }
+    }
+    if (has_csr) {
+      csr = shm.CopyToSharedMem(hg->GetCSRMatrix(etype), prefix + "_csr");
+    }
+    if (has_csc) {
+      csc = shm.CopyToSharedMem(hg->GetCSCMatrix(etype), prefix + "_csc");
+    }
+    relgraphs[etype] = UnitGraph::CreateUnitGraphFrom(
+        num_vtypes, csc, csr, coo, has_csc, has_csr, 0);
+
+  }
+
+  auto ret = std::shared_ptr<HeteroGraph>(
+      // new HeteroGraph(hg->meta_graph_, relgraphs, hg->num_verts_per_type_));
+      new HeteroGraph());
+  ret->shared_mem_ = mem;
+  shm.Write(ntypes);
+  shm.Write(etypes);
+  return ret;
+
+}
+
 HeteroGraphPtr HeteroGraph::CopyToSharedMem(
     HeteroGraphPtr g, const std::string& name,
     const std::vector<std::string>& ntypes,
@@ -357,7 +439,6 @@ HeteroGraphPtr HeteroGraph::CopyToSharedMem(
   shm.Write(has_csc);
   shm.Write(ImmutableGraph::ToImmutable(hg->meta_graph_));
   shm.Write(hg->num_verts_per_type_);
-
   std::vector<HeteroGraphPtr> relgraphs(g->NumEdgeTypes());
 
   for (dgl_type_t etype = 0; etype < g->NumEdgeTypes(); ++etype) {
@@ -386,6 +467,11 @@ HeteroGraphPtr HeteroGraph::CopyToSharedMem(
   shm.Write(ntypes);
   shm.Write(etypes);
   return ret;
+}
+
+std::tuple<HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>>
+HeteroGraph::CreateFromGPUSharedMem(const std::string& name) {
+
 }
 
 std::tuple<HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>>
@@ -439,12 +525,81 @@ HeteroGraph::CreateFromSharedMem(const std::string& name) {
   auto ret =
       std::make_shared<HeteroGraph>(metagraph, relgraphs, num_verts_per_type);
   ret->shared_mem_ = mem;
-
   std::vector<std::string> ntypes;
   std::vector<std::string> etypes;
   CHECK(shm.Read(&ntypes)) << "invalid ntypes";
   CHECK(shm.Read(&etypes)) << "invalid etypes";
   return std::make_tuple(ret, ntypes, etypes);
+}
+
+std::tuple<HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>, std::vector<IdArray>>
+HeteroGraph::CreateFromSharedMemHybrid(const int layer) {
+  // bool exist = SharedMemory::Exist(name);
+  // if (!exist) {
+  //   return std::make_tuple(
+  //       nullptr, std::vector<std::string>(), std::vector<std::string>(), std::vector<IdArray>());
+  // }
+  auto mem = std::make_shared<SharedMemory>("name");
+  auto mem_buf = mem->OpenHybrid(SHARED_MEM_METAINFO_SIZE_MAX);
+  dmlc::MemoryFixedSizeStream strm(mem_buf, SHARED_MEM_METAINFO_SIZE_MAX);
+  SharedMemManager shm("name", &strm);
+
+  uint8_t nbits;
+  CHECK(shm.Read(&nbits)) << "invalid nbits (unit8_t)";
+
+  bool has_coo, has_csr, has_csc;
+  CHECK(shm.Read(&has_coo)) << "invalid nbits (unit8_t)";
+  CHECK(shm.Read(&has_csr)) << "invalid csr (unit8_t)";
+  CHECK(shm.Read(&has_csc)) << "invalid csc (unit8_t)";
+
+  std::vector<IdArray> induced_vertices;
+  IdArray induced_vertices_;
+  if (layer == 0){
+    shm.CreateFromSharedMemHybrid(&induced_vertices_, "_nfeat");
+    induced_vertices.push_back(induced_vertices_);
+  }
+  if (layer == -1){ // Change the layer number here
+    shm.CreateFromSharedMemHybrid(&induced_vertices_, "_nfeat");
+    induced_vertices.push_back(induced_vertices_);
+  }
+
+  auto meta_imgraph = Serializer::make_shared<ImmutableGraph>();
+  CHECK(shm.Read(&meta_imgraph)) << "Invalid meta graph";
+  GraphPtr metagraph = meta_imgraph;
+
+  std::vector<int64_t> num_verts_per_type;
+  CHECK(shm.Read(&num_verts_per_type)) << "Invalid number of vertices per type";
+
+  std::vector<HeteroGraphPtr> relgraphs(metagraph->NumEdges());
+  for (dgl_type_t etype = 0; etype < metagraph->NumEdges(); ++etype) {
+    auto src_dst = metagraph->FindEdge(etype);
+    int num_vtypes = (src_dst.first == src_dst.second) ? 1 : 2;
+    aten::COOMatrix coo;
+    aten::CSRMatrix csr, csc;
+    std::string prefix = "_" + std::to_string(etype);
+    if (has_coo) {
+      shm.CreateFromSharedMemHybrid(&coo, prefix + "_coo");
+    }
+    if (has_csr) {
+      shm.CreateFromSharedMem(&csr, prefix + "_csr");
+    }
+    if (has_csc) {
+      shm.CreateFromSharedMem(&csc, prefix + "_csc");
+    }
+
+    relgraphs[etype] = UnitGraph::CreateUnitGraphFrom(
+        num_vtypes, csc, csr, coo, has_csc, has_csr, has_coo);
+  }
+
+  auto ret =
+      std::make_shared<HeteroGraph>(metagraph, relgraphs, num_verts_per_type);
+  ret->shared_mem_ = mem;
+  std::vector<std::string> ntypes;
+  std::vector<std::string> etypes;
+  CHECK(shm.Read(&ntypes)) << "invalid ntypes";
+  CHECK(shm.Read(&etypes)) << "invalid etypes";
+
+  return std::make_tuple(ret, ntypes, etypes, induced_vertices);
 }
 
 HeteroGraphPtr HeteroGraph::GetGraphInFormat(dgl_format_code_t formats) const {

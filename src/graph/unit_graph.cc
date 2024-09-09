@@ -1592,14 +1592,6 @@ IdArray UnitGraph::totalSize(HeteroGraphPtr g, const DGLContext& ctx) {
   
 }
 
-// Define a new function within torch allocator to inspect free blocks per stream.
-bool UnitGraph::isSpaceAvailable_(size_t nbytes){
-  TensorDispatcher* tensor_dispatcher = TensorDispatcher::Global();
-    if (tensor_dispatcher->IsAvailable()) {
-      return tensor_dispatcher->CUDAGetStreamBasedSpace_(
-        nbytes, tensor_dispatcher->CUDAGetCurrentStream());
-    }
-}
 
 HeteroGraphPtr UnitGraph::GetAny() const {
   if (in_csr_->defined()) {

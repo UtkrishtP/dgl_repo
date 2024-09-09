@@ -9,9 +9,10 @@
 #include <dgl/immutable_graph.h>
 #include <dgl/packed_func_ext.h>
 #include <dgl/runtime/container.h>
+#include <dgl/runtime/ndarray.h>
+#include <dgl/runtime/device_api.h>
 #include <dgl/runtime/parallel_for.h>
 #include <dgl/sampling/neighbor.h>
-
 #include <tuple>
 #include <utility>
 
@@ -20,8 +21,11 @@
 #include "../../unit_graph.h"
 #include "../../shared_mem_manager.h"
 #include "../../heterograph.h"
+#include "../../../globalVars.h"
 #include <dmlc/memory_io.h>
 
+void *ptr_array = nullptr;
+size_t *ptr_offset = nullptr;
 using namespace dgl::runtime;
 using namespace dgl::aten;
 
@@ -572,7 +576,7 @@ SampleNeighborsFusedHybrid(
     const HeteroGraphPtr hg, const std::vector<IdArray>& nodes,
     const std::vector<IdArray>& mapping, const std::vector<int64_t>& fanouts,
     EdgeDir dir, const std::vector<NDArray>& prob_or_mask,
-    const std::vector<IdArray>& exclude_edges, const std::string name, bool replace) {
+    const std::vector<IdArray>& exclude_edges, const int layer, bool replace) {
   CHECK_EQ(nodes.size(), hg->NumVertexTypes())
       << "Number of node ID tensors must match the number of node types.";
   CHECK_EQ(fanouts.size(), hg->NumEdgeTypes())
@@ -591,10 +595,10 @@ SampleNeighborsFusedHybrid(
   std::vector<std::vector<IdType>> new_nodes_vec(hg->NumVertexTypes());
   std::vector<int> seed_nodes_mapped(hg->NumVertexTypes(), 0);
 
-  auto mem = std::make_shared<SharedMemory>(name);
-  auto mem_buf = mem->CreateNew(SHARED_MEM_METAINFO_SIZE_MAX);
+  auto mem = std::make_shared<SharedMemory>("name");
+  auto mem_buf = mem->CreateHybrid(SHARED_MEM_METAINFO_SIZE_MAX);
   dmlc::MemoryFixedSizeStream strm(mem_buf, SHARED_MEM_METAINFO_SIZE_MAX);
-  SharedMemManager shm(name, &strm);
+  SharedMemManager shm("name", &strm);
 
   shm.Write(hg->NumBits());
   bool is_coo = true;
@@ -603,6 +607,15 @@ SampleNeighborsFusedHybrid(
   shm.Write(is_coo); //coo
   shm.Write(is_csr); //csr
   shm.Write(is_csc); //csc
+
+  if (layer == 0){
+    IdArray ret = IdArray::EmptySharedHybrid("label" ,{nodes[0]->shape[0]}, nodes[0]->dtype, ctx, true);
+    shm.Write(ret->ndim);
+    shm.Write(ret->dtype);
+    shm.WriteArray(ret->shape, ret->ndim);
+    shm.Write(IsNullArray(ret));
+    ret.NDArray::CopyFrom(nodes[0]);
+  }
 
   for (dgl_type_t etype = 0; etype < hg->NumEdgeTypes(); ++etype) {
     auto pair = hg->meta_graph()->FindEdge(etype);
@@ -635,14 +648,14 @@ SampleNeighborsFusedHybrid(
           // therefore two diffrent mappings and node vectors are needed
           sampled_graph = sampling_fn(
               hg->GetCSRMatrix(etype), nodes_ntype, mapping[src_vtype],
-              &new_nodes_vec[src_vtype], fanouts[etype], name, prob_or_mask[etype],
+              &new_nodes_vec[src_vtype], fanouts[etype], prob_or_mask[etype],
               replace);
           break;
         case SparseFormat::kCSC:
           CHECK(dir == EdgeDir::kIn) << "Cannot sample in edges on CSR matrix.";
           sampled_graph = sampling_fn(
               hg->GetCSCMatrix(etype), nodes_ntype, mapping[dst_vtype],
-              &new_nodes_vec[dst_vtype], fanouts[etype], name, prob_or_mask[etype],
+              &new_nodes_vec[dst_vtype], fanouts[etype], prob_or_mask[etype],
               replace);
           break;
         default:
@@ -740,31 +753,37 @@ SampleNeighborsFusedHybrid(
     }
   }
 
+  
   // counting how many nodes of each ntype were sampled
   num_nodes_per_type.resize(2 * hg->NumVertexTypes());
   for (size_t i = 0; i < hg->NumVertexTypes(); i++) {
     num_nodes_per_type[i] = new_nodes_vec[i].size();
     num_nodes_per_type[hg->NumVertexTypes() + i] = nodes[i]->shape[0];
-    // if (name.substr(name.rfind('_') + 1) != "2")
-    // {
-    //   induced_vertices.push_back(
-    //       VecToIdArray(new_nodes_vec[i], sizeof(IdType) * 8));
-    // }
-    // else
-    // {
-    //   auto nbits = sizeof(IdType) * 8;
-    //   IdArray ret = IdArray::EmptyShared(name + name + "_nfeat" ,{num_nodes_per_type[i]}, DGLDataType{kDGLInt, nbits, 1}, ctx, true);
-    //   if (nbits == 32) {
-    //     std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int32_t*>(ret->data));
-    //   } else if (nbits == 64) {
-    //     std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int64_t*>(ret->data));
-    //   } else {
-    //     LOG(FATAL) << "Only int32 or int64 is supported.";
-    //   }
-    //   induced_vertices.push_back(ret); // TODO: Add logic for heterograph later
-    // }
-    induced_vertices.push_back(
+    if (layer != -1) 
+    {
+      induced_vertices.push_back(
           VecToIdArray(new_nodes_vec[i], sizeof(IdType) * 8));
+        
+    }
+    else
+    {
+      auto nbits = sizeof(IdType) * 8;
+      IdArray ret = IdArray::EmptySharedHybrid("_nfeat" ,{num_nodes_per_type[i]}, DGLDataType{kDGLInt, nbits, 1}, ctx, true);
+      shm.Write(ret->ndim);
+      shm.Write(ret->dtype);
+      shm.WriteArray(ret->shape, ret->ndim);
+      shm.Write(IsNullArray(ret));
+      if (nbits == 32) {
+        std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int32_t*>(ret->data));
+      } else if (nbits == 64) {
+        std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int64_t*>(ret->data));
+      } else {
+        LOG(FATAL) << "Only int32 or int64 is supported.";
+      }
+      induced_vertices.push_back(ret); // TODO: Add logic for heterograph later
+    }
+    // induced_vertices.push_back(
+    //       VecToIdArray(new_nodes_vec[i], sizeof(IdType) * 8));
   }
 
   std::vector<HeteroGraphPtr> subrels(hg->NumEdgeTypes());
@@ -851,6 +870,7 @@ SampleNeighborsFusedHybrid(
   auto new_graph = std::shared_ptr<HeteroGraph>(
       new HeteroGraph(new_meta_graph, subrels, num_nodes_per_type));
   new_graph->shared_mem_ = mem;
+  new_graph->induced_vertices = induced_vertices;
   return std::make_tuple(new_graph, induced_edges, induced_vertices);
 }
 
@@ -1220,8 +1240,10 @@ DGL_REGISTER_GLOBAL("sampling.neighbor._CAPI_DGLSampleNeighborsFusedHybrid")
       const auto& prob_or_mask = ListValueToVector<NDArray>(args[5]);
       const auto& exclude_edges = ListValueToVector<IdArray>(args[6]);
       const bool replace = args[7];
-      const std::string name = args[8];
-
+      int layer = args[8];
+      ptr_array = args[9];
+      void *ptr_offset_ = args[10];
+      ptr_offset = (size_t*)ptr_offset_;
       CHECK(dir_str == "in" || dir_str == "out")
           << "Invalid edge direction. Must be \"in\" or \"out\".";
       EdgeDir dir = (dir_str == "in") ? EdgeDir::kIn : EdgeDir::kOut;
@@ -1234,7 +1256,7 @@ DGL_REGISTER_GLOBAL("sampling.neighbor._CAPI_DGLSampleNeighborsFusedHybrid")
         std::tie(new_graph, induced_edges, induced_vertices) =
             SampleNeighborsFusedHybrid<IdType>(
                 hg.sptr(), nodes, mapping, fanouts, dir, prob_or_mask,
-                exclude_edges, name, replace);
+                exclude_edges, layer, replace);
       });
 
       List<Value> lhs_nodes_ref;

@@ -126,6 +126,9 @@ class NeighborSampler(BlockSampler):
         prefetch_edge_feats=None,
         output_device=None,
         fused=True,
+        hybrid=False,
+        array=None,
+        offset=None,
     ):
         super().__init__(
             prefetch_node_feats=prefetch_node_feats,
@@ -146,6 +149,12 @@ class NeighborSampler(BlockSampler):
         self.fused = fused
         self.mapping = {}
         self.g = None
+        self.array = array
+        self.offset = offset
+
+    
+    def set_hybrid(self, hybrid):
+        self.hybrid = hybrid
 
     def sample_blocks(self, g, seed_nodes, exclude_eids=None):
         output_nodes = seed_nodes
@@ -166,7 +175,20 @@ class NeighborSampler(BlockSampler):
                 if self.g != g:
                     self.mapping = {}
                     self.g = g
+                
+                layer = len(self.fanouts)
+                i = 0
                 for fanout in reversed(self.fanouts):
+                    # block = g.sample_neighbors_fused(
+                    #     seed_nodes,
+                    #     fanout,
+                    #     edge_dir=self.edge_dir,
+                    #     prob=self.prob,
+                    #     replace=self.replace,
+                    #     exclude_edges=exclude_eids,
+                    #     mapping=self.mapping,
+                    # )
+
                     block = g.sample_neighbors_fused(
                         seed_nodes,
                         fanout,
@@ -175,7 +197,12 @@ class NeighborSampler(BlockSampler):
                         replace=self.replace,
                         exclude_edges=exclude_eids,
                         mapping=self.mapping,
+                        hybrid=self.hybrid,
+                        array=self.array,
+                        offset=self.offset,
+                        layer=i if (i + 1) != len(self.fanouts) else -1,
                     )
+                    i += 1
                     seed_nodes = block.srcdata[NID]
                     blocks.insert(0, block)
                 return seed_nodes, output_nodes, blocks

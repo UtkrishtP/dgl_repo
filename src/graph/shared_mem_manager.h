@@ -23,7 +23,9 @@ namespace dgl {
 
 using dgl::runtime::SharedMemory;
 
-const size_t SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 32;
+// const size_t SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 32;
+const size_t SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 48;
+const size_t SHARED_MEM_GPU_METAINFO_SIZE_MAX = 1024 * 32 + 6 * sizeof(cudaIpcMemHandle_t);;
 
 // Utility class to copy objects to shared memory and record metadatas
 class SharedMemManager : public dmlc::Stream {
@@ -35,7 +37,16 @@ class SharedMemManager : public dmlc::Stream {
   T CopyToSharedMem(const T& data, std::string name);
 
   template <typename T>
+  T CopyToGPUSharedMem(const T& data, std::string name);
+
+  template <typename T>
   bool CreateFromSharedMem(T* out_data, std::string name);
+
+  template <typename T>
+  bool CreateFromSharedMemHybrid(T* out_data, std::string name);
+
+  template <typename T>
+  bool CreateFromGPUSharedMem(T* out_data, std::string name);
 
   // delegate methods to strm_
   virtual size_t Read(void* ptr, size_t size) { return strm_->Read(ptr, size); }

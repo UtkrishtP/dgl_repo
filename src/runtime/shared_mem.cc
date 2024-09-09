@@ -12,7 +12,8 @@
 #include <dmlc/logging.h>
 #include <stdio.h>
 #include <string.h>
-
+#include "../globalVars.h"
+#include "../globalVars_.h"
 #include "resource_manager.h"
 
 namespace dgl {
@@ -71,6 +72,15 @@ SharedMemory::~SharedMemory() {
 #endif  // _WIN32
 }
 
+void *SharedMemory::CreateHybrid(size_t sz) {
+  this->own_ = true;
+  size_t offset = *(ptr_offset + 1);
+  *(ptr_offset + 1) += sz;
+  this->size_ = sz;
+  return ptr_array + offset;
+  // We need to create a shared-memory file.
+}
+
 void *SharedMemory::CreateNew(size_t sz) {
 #ifndef _WIN32
   this->own_ = true;
@@ -106,6 +116,13 @@ void *SharedMemory::CreateNew(size_t sz) {
   this->size_ = sz;
   return ptr_;
 #endif  // _WIN32
+}
+
+void *SharedMemory::OpenHybrid(size_t sz){
+  size_t offset = *(ptr_read_offset + 1);
+  *(ptr_read_offset + 1) += sz;
+  this->size_ = sz;
+  return ptr_array + offset;
 }
 
 void *SharedMemory::Open(size_t sz) {

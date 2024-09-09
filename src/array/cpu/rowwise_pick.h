@@ -208,7 +208,7 @@ template <typename IdxType, bool map_seed_nodes>
 std::pair<CSRMatrix, IdArray> CSRRowWisePickFusedHybrid(
     CSRMatrix mat, IdArray rows, IdArray seed_mapping,
     std::vector<IdxType>* new_seed_nodes, int64_t num_picks, bool replace,
-    PickFn<IdxType> pick_fn, std::string name, NumPicksFn<IdxType> num_picks_fn) {
+    PickFn<IdxType> pick_fn, NumPicksFn<IdxType> num_picks_fn) {
   using namespace aten;
   const IdxType* indptr = static_cast<IdxType*>(mat.indptr->data);
   const IdxType* indices = static_cast<IdxType*>(mat.indices->data);
@@ -263,9 +263,9 @@ std::pair<CSRMatrix, IdArray> CSRRowWisePickFusedHybrid(
       for (int t = 0; t < num_threads; ++t) {
         global_prefix[t + 1] += global_prefix[t];
       }
-      picked_col = IdArray::EmptyShared(name + name + "_0_coo_col" , {global_prefix[num_threads]}, idtype, ctx, true);
+      picked_col = IdArray::EmptySharedHybrid( "_0_coo_col" , {global_prefix[num_threads]}, idtype, ctx, true);
       picked_idx = IdArray::Empty({global_prefix[num_threads]}, idtype, ctx);
-      picked_coo_rows = IdArray::EmptyShared(name + name + "_0_coo_row", {global_prefix[num_threads]}, idtype, ctx, true);
+      picked_coo_rows = IdArray::EmptySharedHybrid( "_0_coo_row", {global_prefix[num_threads]}, idtype, ctx, true);
     }
 
 #pragma omp barrier

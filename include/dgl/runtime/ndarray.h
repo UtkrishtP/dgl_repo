@@ -276,6 +276,9 @@ class NDArray {
       const std::string& name, std::vector<int64_t> shape, DGLDataType dtype,
       DGLContext ctx, bool is_create);
 
+  DGL_DLL static NDArray EmptySharedHybrid(
+      const std::string& name, std::vector<int64_t> shape, DGLDataType dtype,
+      DGLContext ctx, bool is_create);
   /**
    * @brief Get the size of the array in the number of bytes.
    */
@@ -558,6 +561,7 @@ inline void NDArray::CopyTo(const NDArray& other) const {
   }
   CopyTo(&(other.data_->dl_tensor));
 }
+
 
 inline NDArray NDArray::CopyTo(const DGLContext& ctx) const {
   CHECK(data_ != nullptr);

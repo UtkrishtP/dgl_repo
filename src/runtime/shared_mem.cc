@@ -122,7 +122,7 @@ void *SharedMemory::OpenHybrid(size_t sz){
   size_t offset = *(ptr_read_offset + 1);
   *(ptr_read_offset + 1) += sz;
   this->size_ = sz;
-  return ptr_array + offset;
+  return ptr_array_ + offset;
 }
 
 void *SharedMemory::Open(size_t sz) {

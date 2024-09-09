@@ -19,6 +19,7 @@
 
 using namespace dgl::runtime;
 
+void *ptr_array_ = nullptr;
 size_t *ptr_read_offset = nullptr;
 namespace dgl {
 
@@ -575,8 +576,9 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCreateFromSharedMem")
 
 DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCreateFromSharedMemHybrid")
     .set_body([](DGLArgs args, DGLRetValue* rv) {
-      int layer = args[0];
-      void *ptr = args[1];
+      ptr_array_ = args[0];
+      int layer = args[1];
+      void *ptr = args[2];
       ptr_read_offset = (size_t *)ptr;
       HeteroGraphPtr hg;
       std::vector<std::string> ntypes;

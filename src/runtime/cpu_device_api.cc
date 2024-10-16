@@ -85,6 +85,10 @@ class CPUDeviceAPI final : public DeviceAPI {
         std::make_shared<CPUDeviceAPI>();
     return inst;
   }
+
+  std::string CreateGPUSharedMem(DGLContext ctx ,void* ptr) final {return "";}
+  void* GetGPUSharedMem(DGLContext ctx, cudaIpcMemHandle_t handle) final {return nullptr;}
+  void* GetBaseAllocation(DGLContext ctx, void* ptr) final {return nullptr;}
 };
 
 struct CPUWorkspacePool : public WorkspacePool {

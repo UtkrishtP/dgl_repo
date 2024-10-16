@@ -100,6 +100,20 @@ TA_EXPORTS void CUDARecordHostAlloc(
 TA_EXPORTS void CUDAHostAllocatorEmptyCache() {
   at::cuda::CachingHostAllocator_emptyCache();
 }
+
+TA_EXPORTS cudaIpcMemHandle_t CUDAIpcGetMemHandle(void* ptr) {
+  cudaIpcMemHandle_t handle;
+  return handle;
+}
+
+TA_EXPORTS void* CUDAIpcOpenMemHandle(std::string handle) {
+  return c10::cuda::CUDACachingAllocator::getIpcDevPtr(handle).get();
+}
+
+TA_EXPORTS void* CUDAGetBaseAllocation(void* ptr) {
+  size_t size;
+  return c10::cuda::CUDACachingAllocator::getBaseAllocation(ptr, &size);
+}
 #endif  // DGL_USE_CUDA
 };
 

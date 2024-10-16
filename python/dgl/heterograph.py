@@ -5710,7 +5710,6 @@ class DGLGraph(object):
             return self
 
         ret = copy.copy(self)
-
         # 1. Copy graph structure
         ret._graph = self._graph.copy_to(utils.to_dgl_context(device))
 
@@ -6284,6 +6283,43 @@ class DGLGraph(object):
             name, self.ntypes, self.etypes, formats
         )
         return DGLGraph(gidx, self.ntypes, self.etypes)
+    
+    def shared_memory_gpu(self, name, offset, nfeat_or_label, layer, formats=("coo", "csr", "csc")):
+        """Return a copy of this graph in shared memory in GPU, without node data or edge data.
+
+        It moves the graph index to shared memory and returns a DGLGraph object which
+        has the same graph structure, node types and edge types but does not contain node data
+        or edge data.
+
+        Parameters
+        ----------
+        name : str
+            The name of the shared memory.
+        formats : str or a list of str (optional)
+            Desired formats to be materialized.
+
+        Returns
+        -------
+        DGLGraph
+            The graph in shared memory
+        """
+        assert len(formats) > 0
+        if isinstance(formats, str):
+            formats = [formats]
+        for fmt in formats:
+            assert fmt in (
+                "coo",
+                "csr",
+                "csc",
+            ), "{} is not coo, csr or csc".format(fmt)
+        formats = ["coo"]
+        gidx, nodes = self._graph.shared_memory_gpu(
+            name, offset, nfeat_or_label, layer, self.ntypes, self.etypes, formats
+        )
+        # import time
+        # time.sleep(5)
+        # return DGLGraph(gidx, self.ntypes, self.etypes)
+        return (gidx, nodes) #, self.ntypes, self.etypes)
 
     def long(self):
         """Cast the graph to one with idtype int64

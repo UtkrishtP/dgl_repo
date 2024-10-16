@@ -198,6 +198,37 @@ class TensorDispatcher {
     auto entry = entrypoints_[Op::kCUDAHostAllocatorEmptyCache];
     FUNCCAST(tensoradapter::CUDAHostAllocatorEmptyCache, entry)();
   }
+
+ /*
+  * @brief Get the cudaIpcMemHandle_t of a GPU memory block.
+  * @note Used in CUDADeviceAPI::CUDAIpcGetMemHandle().
+  * @param ptr Pointer to the GPU memory block.
+  * @return cudaIpcMemHandle_t handle of the GPU memory block.
+ */
+  inline cudaIpcMemHandle_t CUDAIpcGetMemHandle(void* ptr) {
+    // cudaIpcMemHandle_t handle;
+    auto entry = entrypoints_[Op::kCUDAIpcGetMemHandle];
+    auto recorded_alloc = FUNCCAST(tensoradapter::CUDAIpcGetMemHandle , entry);
+    return recorded_alloc(ptr);
+  }
+
+  /*
+    * @brief Get the GPU memory block from cudaIpcMemHandle_t.
+    * @note Used in CUDADeviceAPI::CUDAIpcOpenMemHandle().
+    * @param handle cudaIpcMemHandle_t handle of the GPU memory block.
+    * @return Pointer to the GPU memory block.
+  */
+  inline void* CUDAIpcOpenMemHandle(std::string handle) {
+    // void* ptr;
+    auto entry = entrypoints_[Op::kCUDAIpcOpenMemHandle];
+    auto recorded_alloc = FUNCCAST(tensoradapter::CUDAIpcOpenMemHandle , entry);
+    return recorded_alloc(handle);
+  }
+
+  inline void* GetBaseAllocation(void* ptr) {
+    auto entry = entrypoints_[Op::kCUDAGetBaseAllocation];
+    return FUNCCAST(tensoradapter::CUDAGetBaseAllocation, entry)(ptr);
+  }
 #endif  // DGL_USE_CUDA
 
   /**
@@ -234,6 +265,8 @@ class TensorDispatcher {
       "CUDACurrentStream",   "RecordStream",
       "CUDARawHostAlloc",    "CUDARawHostDelete",
       "CUDARecordHostAlloc", "CUDAHostAllocatorEmptyCache",
+      "CUDAIpcGetMemHandle", "CUDAIpcOpenMemHandle",
+      "CUDAGetBaseAllocation",
 #endif  // DGL_USE_CUDA
   };
 
@@ -251,6 +284,9 @@ class TensorDispatcher {
     static constexpr int kCUDARawHostDelete = 7;
     static constexpr int kCUDARecordHostAlloc = 8;
     static constexpr int kCUDAHostAllocatorEmptyCache = 9;
+    static constexpr int kCUDAIpcGetMemHandle = 10;
+    static constexpr int kCUDAIpcOpenMemHandle = 11;
+    static constexpr int kCUDAGetBaseAllocation = 12;
 #endif  // DGL_USE_CUDA
   };
 
@@ -261,7 +297,7 @@ class TensorDispatcher {
   void* entrypoints_[num_entries_] = {
       nullptr, nullptr,
 #ifdef DGL_USE_CUDA
-      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
 #endif  // DGL_USE_CUDA
   };
 

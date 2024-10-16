@@ -465,7 +465,6 @@ class UnitGraph::COO : public BaseHeteroGraph {
 /** @brief CSR graph */
 class UnitGraph::CSR : public BaseHeteroGraph {
  public:
- 
   CSR(GraphPtr metagraph, int64_t num_src, int64_t num_dst, IdArray indptr,
       IdArray indices, IdArray edge_ids)
       : BaseHeteroGraph(metagraph) {
@@ -1303,6 +1302,10 @@ HeteroGraphPtr UnitGraph::CopyTo(HeteroGraphPtr g, const DGLContext& ctx) {
   } else {
     auto bg = std::dynamic_pointer_cast<UnitGraph>(g);
     CHECK_NOTNULL(bg);
+    /*
+      We have disabled the CSR/CSC format copy to GPU for now.
+      Bootstrapping GNN training on GPU only requires COO format.
+    */
     // CSRPtr new_incsr = (bg->in_csr_->defined())
     //                        ? CSRPtr(new CSR(bg->in_csr_->CopyTo(ctx)))
     //                        : nullptr;

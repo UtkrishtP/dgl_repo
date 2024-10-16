@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import scipy
 
-from . import backend as F, utils
+from . import backend as F, ndarray as nd, utils
 from ._ffi.function import _init_api
 from ._ffi.object import ObjectBase, register_object
 from ._ffi.streams import to_dgl_stream_handle
@@ -363,7 +363,7 @@ class HeteroGraphIndex(ObjectBase):
         )
     
     def shared_memory_gpu(
-        self, name, ntypes=None, etypes=None, formats=("coo", "csr", "csc")
+        self, name, offset, nfeat_or_label, layer, ntypes=None, etypes=None, formats=("coo", "csr", "csc")
     ):
         """Return a copy of this graph in shared memory in GPU
 
@@ -383,14 +383,15 @@ class HeteroGraphIndex(ObjectBase):
         HeteroGraphIndex
             The graph index in shared memory
         """
-        assert len(name) > 0, "The name of shared memory cannot be empty"
         assert len(formats) > 0
         for fmt in formats:
             assert fmt in ("coo", "csr", "csc")
         ntypes = [] if ntypes is None else ntypes
         etypes = [] if etypes is None else etypes
+        # TODO: Handle case for heterographs, will multiple node types. Either pass each node type separately or
+        # figure out a way on how to make CPP layer accept a vector or pointer to IdArray
         return _CAPI_DGLHeteroCopyToGPUSharedMem(
-            self, name, ntypes, etypes, formats
+            self, name, offset, F.to_dgl_nd(nfeat_or_label), layer, ntypes, etypes, formats
         )
 
     def is_multigraph(self):
@@ -1430,7 +1431,7 @@ def create_heterograph_from_shared_memory(name):
     g, ntypes, etypes = _CAPI_DGLHeteroCreateFromSharedMem(name)
     return g, list(ntypes), list(etypes)
 
-def create_heterograph_from_shared_memory_hybrid(layer, offset):
+def create_heterograph_from_shared_memory_hybrid(array, layer, offset):
     """Create a heterograph from shared memory with the given name.
 
     Paramaters
@@ -1446,12 +1447,13 @@ def create_heterograph_from_shared_memory_hybrid(layer, offset):
     etypes : list of str
         Names of edge types
     """
-    g, ntypes, etypes, induced_vertices = _CAPI_DGLHeteroCreateFromSharedMemHybrid(layer, offset)
+    g, ntypes, etypes, induced_vertices = _CAPI_DGLHeteroCreateFromSharedMemHybrid(array, layer, offset)
     return g, list(ntypes), list(etypes), induced_vertices
 
-def create_heterograph_from_gpu_shared_memory(name):
+def create_heterograph_from_gpu_shared_memory(name, offset, layer):
     """Create a heterograph from GPU shared memory with the given name.
-    Stores the IPC handle and metadata in CPU shared memory (/dev/shm)
+    Stores the IPC handle and metadata in CPU shared memory (MAP_ANONYMOUS).
+    
     Paramaters
     ----------
     name : str
@@ -1465,8 +1467,8 @@ def create_heterograph_from_gpu_shared_memory(name):
     etypes : list of str
         Names of edge types
     """
-    g, ntypes, etypes = _CAPI_DGLHeteroCreateFromGPUSharedMem(name)
-    return g, list(ntypes), list(etypes)
+    g, ntypes, etypes, vertices = _CAPI_DGLHeteroCreateFromGPUSharedMem(name, offset, layer)
+    return g, list(ntypes), list(etypes), vertices
 
 def joint_union(metagraph, gidx_list):
     """Return a joint union of the input heterographs.

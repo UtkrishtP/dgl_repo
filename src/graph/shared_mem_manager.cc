@@ -182,4 +182,41 @@ bool SharedMemManager::CreateFromSharedMemHybrid<COOMatrix>(
   strm_->Read(&coo->col_sorted);
   return true;
 }
+
+template <>
+bool SharedMemManager::CreateFromGPUSharedMemHybrid<NDArray>(
+    NDArray *nd, std::string name) {
+  int ndim;
+  DGLContext ctx = {kDGLCUDA, 0};
+  DGLDataType dtype;
+  CHECK(this->Read(&ndim)) << "Invalid DGLArray file format";
+  CHECK(this->Read(&dtype)) << "Invalid DGLArray file format";
+  
+  std::vector<int64_t> shape(ndim);
+  if (ndim != 0) {
+    CHECK(this->ReadArray(&shape[0], ndim)) << "Invalid DGLArray file format";
+  }
+  cudaIpcMemHandle_t mem_handle;
+  this->Read(&mem_handle);
+  long offset;
+  this->Read(&offset);
+  *nd = NDArray::EmptySharedHybridGPU(graph_name_ + name, shape, dtype, ctx, mem_handle, offset);
+  
+  return true;
+}
+
+template <>
+bool SharedMemManager::CreateFromGPUSharedMemHybrid<COOMatrix>(
+    COOMatrix *coo, std::string name) {
+  CreateFromGPUSharedMemHybrid(&coo->row, name + "_col");
+  CreateFromGPUSharedMemHybrid(&coo->col, name + "_row");
+  // CreateFromSharedMem(&coo->data, name + "_data");
+  coo->data = NDArray::Empty({0}, coo->row->dtype, coo->row->ctx);
+  strm_->Read(&coo->num_rows);
+  strm_->Read(&coo->num_cols);
+  strm_->Read(&coo->row_sorted);
+  strm_->Read(&coo->col_sorted);
+  return true;
+}
+
 }  // namespace dgl

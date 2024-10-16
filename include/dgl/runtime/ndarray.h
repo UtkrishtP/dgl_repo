@@ -16,9 +16,9 @@
 #include "c_runtime_api.h"
 #include "serializer.h"
 #include "shared_mem.h"
-
-#ifdef DGL_USE_CUDA
 #include <cuda_runtime.h>
+#ifdef DGL_USE_CUDA
+
 
 #define BF16_ENABLED (defined(CUDART_VERSION) && CUDART_VERSION >= 11000)
 
@@ -279,6 +279,10 @@ class NDArray {
   DGL_DLL static NDArray EmptySharedHybrid(
       const std::string& name, std::vector<int64_t> shape, DGLDataType dtype,
       DGLContext ctx, bool is_create);
+
+  DGL_DLL static NDArray EmptySharedHybridGPU(
+      const std::string& name, std::vector<int64_t> shape, DGLDataType dtype,
+      DGLContext ctx, cudaIpcMemHandle_t cuda_handle, long offset);
   /**
    * @brief Get the size of the array in the number of bytes.
    */
@@ -542,6 +546,7 @@ inline void NDArray::CopyTo(DGLArray* other) const {
 }
 
 inline void NDArray::CopyTo(const NDArray& other) const {
+
   CHECK(other.data_ != nullptr);
   // copy between two devices
   if (data_->dl_tensor.ctx.device_type !=
@@ -564,6 +569,7 @@ inline void NDArray::CopyTo(const NDArray& other) const {
 
 
 inline NDArray NDArray::CopyTo(const DGLContext& ctx) const {
+
   CHECK(data_ != nullptr);
   const DGLArray* array = operator->();
   NDArray ret = Empty(

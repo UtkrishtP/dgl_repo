@@ -20,7 +20,7 @@
 
 #include "./unit_graph.h"
 #include "shared_mem_manager.h"
-
+#include "../runtime/cuda/cuda_common.h"
 namespace dgl {
 
 /** @brief Heterograph */
@@ -286,11 +286,15 @@ class HeteroGraph : public BaseHeteroGraph {
    * Also save names of node types and edge types of the HeteroGraph object to
    * shared memory
    */
-  static HeteroGraphPtr CopyToGPUSharedMem(
+  static std::tuple<
+    HeteroGraphPtr, std::vector<IdArray>>
+   CopyToGPUSharedMem(
       HeteroGraphPtr g, const std::string& name,
       const std::vector<std::string>& ntypes,
       const std::vector<std::string>& etypes,
-      const std::set<std::string>& fmts);
+      const std::set<std::string>& fmts,
+      const std::vector<IdArray>& nodes,
+      const int layer);
 
   /**
    * @brief Create a heterograph from
@@ -311,8 +315,8 @@ static std::tuple<
    * @return the HeteroGraphPtr in GPU, names of node types, names of edge types
    */
   static std::tuple<
-      HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>>
-  CreateFromGPUSharedMem(const std::string& name);
+      HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>, std::vector<IdArray>>
+  CreateFromGPUSharedMem(int layer);
 
   /** @brief Creat a LineGraph of self */
   HeteroGraphPtr LineGraph(bool backtracking) const;

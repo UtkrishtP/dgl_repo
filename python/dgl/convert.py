@@ -14,6 +14,7 @@ __all__ = [
     "graph",
     "hetero_from_shared_memory",
     "hetero_from_shared_memory_hybrid",
+    "hetero_from_gpu_shared_memory",
     "heterograph",
     "create_block",
     "block_to_graph",
@@ -183,10 +184,9 @@ def graph(
 
     return g.to(device)
 
-def hetero_from_gpu_shared_memory(name):
+def hetero_from_gpu_shared_memory(name, offset, layer):
     """Create a heterograph using shared memory in GPU.
     Store the IPC handle and metadata in shared memory in CPU. (/dev/shm)
-
 
     Paramaters
     ----------
@@ -197,10 +197,11 @@ def hetero_from_gpu_shared_memory(name):
     -------
     HeteroGraph (in shared memory)
     """
-    g, ntypes, etypes = heterograph_index.create_heterograph_from_gpu_shared_memory(
-        name
+    g, ntypes, etypes, vertices = heterograph_index.create_heterograph_from_gpu_shared_memory(
+        name, offset, layer
     )
-    return DGLBlock(g, ntypes, etypes)
+    src_node_ids = [F.from_dgl_nd(src) for src in vertices]
+    return DGLBlock(g, ntypes, etypes), src_node_ids
 
 def hetero_from_shared_memory(name):
     """Create a heterograph from shared memory with the given name.
@@ -222,7 +223,7 @@ def hetero_from_shared_memory(name):
     )
     return DGLGraph(g, ntypes, etypes)
 
-def hetero_from_shared_memory_hybrid(layer, offset):
+def hetero_from_shared_memory_hybrid(array, layer, offset):
     """Create a heterograph from shared memory with the given name.
 
     The newly created graph will have the same node types and edge types as the original graph.
@@ -238,7 +239,7 @@ def hetero_from_shared_memory_hybrid(layer, offset):
     HeteroGraph (in shared memory)
     """
     g, ntypes, etypes, induced_vertices = heterograph_index.create_heterograph_from_shared_memory_hybrid(
-        layer, offset
+        array, layer, offset
     )
     src_node_ids = [F.from_dgl_nd(src) for src in induced_vertices]
     # We need to create a DGLBlock object here other wise {sageconv.py: 213} will fail.

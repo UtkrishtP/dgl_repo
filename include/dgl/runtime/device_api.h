@@ -259,6 +259,10 @@ class DeviceAPI {
    */
   DGL_DLL static DeviceAPI* Get(
       DGLDeviceType dev_type, bool allow_missing = false);
+
+    virtual std::string CreateGPUSharedMem(DGLContext ctx ,void* ptr) = 0;
+    virtual void* GetGPUSharedMem(DGLContext ctx, cudaIpcMemHandle_t handle) = 0;
+    virtual void* GetBaseAllocation(DGLContext ctx, void* ptr) = 0;
 };
 
 /** @brief The device type bigger than this is RPC device */

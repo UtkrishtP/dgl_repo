@@ -105,6 +105,10 @@ void CUDARecordHostAlloc(
  */
 void CUDAHostAllocatorEmptyCache();
 
+cudaIpcMemHandle_t CUDAIpcGetMemHandle(void* ptr);
+void* CUDAIpcOpenMemHandle(std::string handle);
+void* CUDAGetBaseAllocation(void* ptr);
+
 #endif  // DGL_USE_CUDA
 }
 

@@ -336,6 +336,27 @@ class CUDADeviceAPI final : public DeviceAPI {
     return inst;
   }
 
+  std::string CreateGPUSharedMem(DGLContext ctx ,void* ptr) final {
+    SetDevice(ctx);
+    TensorDispatcher* tensor_dispatcher = TensorDispatcher::Global();
+    cudaIpcMemHandle_t handle;
+    handle = tensor_dispatcher->CUDAIpcGetMemHandle(ptr);
+    return std::string(reinterpret_cast<const char*>(&handle), sizeof(handle));
+  }
+
+  void* GetGPUSharedMem(DGLContext ctx, cudaIpcMemHandle_t handle) final {
+    SetDevice(ctx);
+    TensorDispatcher* tensor_dispatcher = TensorDispatcher::Global();
+    return tensor_dispatcher->CUDAIpcOpenMemHandle(
+      std::string(reinterpret_cast<const char*>(&handle), sizeof(handle)));
+  }
+
+  void* GetBaseAllocation(DGLContext ctx, void* ptr) final {
+    SetDevice(ctx);
+    TensorDispatcher* tensor_dispatcher = TensorDispatcher::Global();
+    return tensor_dispatcher->GetBaseAllocation(ptr);
+  }
+
  private:
   static void GPUCopy(
       const void* from, void* to, size_t size, cudaMemcpyKind kind,

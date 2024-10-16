@@ -193,6 +193,20 @@ NDArray NDArray::EmptySharedHybrid(
   return ret;
 }
 
+NDArray NDArray::EmptySharedHybridGPU(
+    const std::string& name, std::vector<int64_t> shape, DGLDataType dtype,
+    DGLContext ctx, cudaIpcMemHandle_t cuda_handle, long offset) {
+  NDArray ret = Internal::Create(shape, dtype, ctx);
+  auto mem = std::make_shared<SharedMemory>(name);
+  cudaError_t e = cudaIpcOpenMemHandle(&ret.data_->dl_tensor.data, cuda_handle, cudaIpcMemLazyEnablePeerAccess);
+  CHECK(e == cudaSuccess || e == cudaErrorCudartUnloading) << "CUDA: " << cudaGetErrorString(e);
+  // ret.data_->dl_tensor.data = (char*)DeviceAPI::Get(ret->ctx)->GetGPUSharedMem(
+  //       ret->ctx, cuda_handle) + offset;
+  ret.data_->dl_tensor.data = (char*)ret.data_->dl_tensor.data + offset;
+  ret.data_->mem = mem;
+  return ret;
+}
+
 NDArray NDArray::Empty(
     std::vector<int64_t> shape, DGLDataType dtype, DGLContext ctx) {
   NDArray ret = Internal::Create(shape, dtype, ctx);

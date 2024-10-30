@@ -369,33 +369,34 @@ HeteroGraph::CopyToGPUSharedMem(
     if (has_coo) {
       // coo = shm.CopyToSharedMem(hg->GetCOOMatrix(etype), prefix + "_coo");
       auto _coo = hg->GetCOOMatrix(etype);
-      cudaIpcMemHandle_t mem_handle, mem_handle_;
-  
+      cudaIpcMemHandle_t mem_handle_row, mem_handle_col;
+      
       // std::string str_ = DeviceAPI::Get({kDGLCUDA, 0})->CreateGPUSharedMem(
       //   {kDGLCUDA, 0}, (*(_coo).row.operator->()).data);
       // std::memcpy(&mem_handle, str_.data(), sizeof(mem_handle));
       // str_ = DeviceAPI::Get({kDGLCUDA, 0})->CreateGPUSharedMem(
       //   {kDGLCUDA, 0}, (*(_coo).col.operator->()).data);
       // std::memcpy(&mem_handle_, str_.data(), sizeof(mem_handle_));
-      
-      CUDA_CALL(cudaIpcGetMemHandle(&mem_handle, (*(_coo).row.operator->()).data));
-      CUDA_CALL(cudaIpcGetMemHandle(&mem_handle_, (*(_coo).col.operator->()).data));
-      auto offset_row = (char*)(*(_coo).row.operator->()).data - (char*)DeviceAPI::Get({kDGLCUDA, 0})->GetBaseAllocation({kDGLCUDA, 0}, (*(_coo).row.operator->()).data);
-      auto offset_col = (char*)(*(_coo).col.operator->()).data - (char*)DeviceAPI::Get({kDGLCUDA, 0})->GetBaseAllocation({kDGLCUDA, 0}, (*(_coo).col.operator->()).data);
+      CUDA_CALL(cudaIpcGetMemHandle(&mem_handle_row, (*(_coo).row.operator->()).data));
+      CUDA_CALL(cudaIpcGetMemHandle(&mem_handle_col, (*(_coo).col.operator->()).data));
+      long offset_row = (char*)(*(_coo).row.operator->()).data - (char*)DeviceAPI::Get({kDGLCUDA, 0})->GetBaseAllocation({kDGLCUDA, 0}, (*(_coo).row.operator->()).data);
+      long offset_col = (char*)(*(_coo).col.operator->()).data - (char*)DeviceAPI::Get({kDGLCUDA, 0})->GetBaseAllocation({kDGLCUDA, 0}, (*(_coo).col.operator->()).data);
       shm.Write((_coo.row)->ndim);
       shm.Write((_coo.row)->dtype);
       int ndim = (_coo.row)->ndim;
       shm.WriteArray((_coo.row)->shape, ndim);
-      shm.Write(mem_handle);
+      shm.Write(mem_handle_row);
       shm.Write(offset_row);
       shm.Write((_coo.col)->ndim);
       shm.Write((_coo.col)->dtype);
       ndim = (_coo.col)->ndim;
       shm.WriteArray((_coo.col)->shape, ndim);
-      shm.Write(mem_handle_);
+      shm.Write(mem_handle_col);
       shm.Write(offset_col);
       // std::cout << "Handle " << std::string(reinterpret_cast<const char*>(&mem_handle), sizeof(mem_handle)) << " Offset: " << offset_row << std::endl;
+      // std::cout << " Offset: " << offset_row << std::endl;
       // std::cout << "Handle " << std::string(reinterpret_cast<const char*>(&mem_handle_), sizeof(mem_handle_)) << " Offset: " << offset_col << std::endl;
+      // std::cout << " Offset: " << offset_col << std::endl;
       shm.Write(_coo.num_rows);
       shm.Write(_coo.num_cols);
       shm.Write(_coo.row_sorted);
@@ -425,7 +426,7 @@ HeteroGraph::CopyToGPUSharedMem(
       //   {kDGLCUDA, 0}, (nodes.operator->())->data);
       // std::memcpy(&mem_handle, str_.data(), sizeof(mem_handle));
       CUDA_CALL(cudaIpcGetMemHandle(&mem_handle, (nodes.operator->())->data));
-      auto offset = (char*)(nodes.operator->())->data - (char*)DeviceAPI::Get({kDGLCUDA, 0})->GetBaseAllocation({kDGLCUDA, 0}, (nodes.operator->())->data);
+      long offset = (char*)(nodes.operator->())->data - (char*)DeviceAPI::Get({kDGLCUDA, 0})->GetBaseAllocation({kDGLCUDA, 0}, (nodes.operator->())->data);
       shm.Write(nodes->ndim);
       shm.Write(nodes->dtype);
       int ndim = nodes->ndim;
@@ -433,6 +434,7 @@ HeteroGraph::CopyToGPUSharedMem(
       shm.Write(mem_handle);
       shm.Write(offset);
       // std::cout << "Handle " << std::string(reinterpret_cast<const char*>(&mem_handle), sizeof(mem_handle)) << " Offset: " << offset << std::endl;
+      // std::cout << " Offset: " << offset << std::endl;
     }
   }
   auto ret = std::shared_ptr<HeteroGraph>(
@@ -622,7 +624,7 @@ HeteroGraph::CreateFromSharedMem(const std::string& name) {
 }
 
 std::tuple<HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>, std::vector<IdArray>>
-HeteroGraph::CreateFromSharedMemHybrid(const int layer) {
+HeteroGraph::CreateFromSharedMemHybrid(const int layer, std::string dir) {
   auto mem = std::make_shared<SharedMemory>("name");
   auto mem_buf = mem->OpenHybrid(SHARED_MEM_METAINFO_SIZE_MAX);
   dmlc::MemoryFixedSizeStream strm(mem_buf, SHARED_MEM_METAINFO_SIZE_MAX);
@@ -639,14 +641,6 @@ HeteroGraph::CreateFromSharedMemHybrid(const int layer) {
   // TODO: Make it compatible with heterographs
   std::vector<IdArray> induced_vertices;
   IdArray induced_vertices_;
-  if (layer == 0){
-    shm.CreateFromSharedMemHybrid(&induced_vertices_, "_nfeat");
-    induced_vertices.push_back(induced_vertices_);
-  }
-  if (layer == -1){ // Change the layer number here
-    shm.CreateFromSharedMemHybrid(&induced_vertices_, "_nfeat");
-    induced_vertices.push_back(induced_vertices_);
-  }
 
   auto meta_imgraph = Serializer::make_shared<ImmutableGraph>();
   CHECK(shm.Read(&meta_imgraph)) << "Invalid meta graph";
@@ -663,19 +657,23 @@ HeteroGraph::CreateFromSharedMemHybrid(const int layer) {
     aten::CSRMatrix csr, csc;
     std::string prefix = "_" + std::to_string(etype);
     if (has_coo) {
-      shm.CreateFromSharedMemHybrid(&coo, prefix + "_coo");
+      shm.CreateFromSharedMemHybrid_(&coo, prefix + "_coo", dir);
     }
-    if (has_csr) {
-      shm.CreateFromSharedMem(&csr, prefix + "_csr");
-    }
-    if (has_csc) {
-      shm.CreateFromSharedMem(&csc, prefix + "_csc");
-    }
+    // if (has_csr) {
+    //   shm.CreateFromSharedMem(&csr, prefix + "_csr");
+    // }
+    // if (has_csc) {
+    //   shm.CreateFromSharedMem(&csc, prefix + "_csc");
+    // }
 
     relgraphs[etype] = UnitGraph::CreateUnitGraphFrom(
         num_vtypes, csc, csr, coo, has_csc, has_csr, has_coo);
   }
 
+  if (layer == 0){
+    shm.CreateFromSharedMemHybrid(&induced_vertices_, "_nfeat");
+    induced_vertices.push_back(induced_vertices_);
+  }
   auto ret =
       std::make_shared<HeteroGraph>(metagraph, relgraphs, num_verts_per_type);
   ret->shared_mem_ = mem;

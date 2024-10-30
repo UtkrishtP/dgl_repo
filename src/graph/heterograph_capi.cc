@@ -582,12 +582,13 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCreateFromSharedMemHybrid"
       ptr_array = args[0];
       int layer = args[1];
       void *ptr = args[2];
+      std::string dir = args[3];
       ptr_offset = (size_t *)ptr;
       HeteroGraphPtr hg;
       std::vector<std::string> ntypes;
       std::vector<std::string> etypes;
       std::vector<IdArray> induced_vertices;
-      std::tie(hg, ntypes, etypes, induced_vertices) = HeteroGraph::CreateFromSharedMemHybrid(layer);
+      std::tie(hg, ntypes, etypes, induced_vertices) = HeteroGraph::CreateFromSharedMemHybrid(layer, dir);
       List<Value> ntypes_list;
       List<Value> etypes_list;
       List<Value> lhs_nodes_ref;

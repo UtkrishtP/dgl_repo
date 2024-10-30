@@ -307,7 +307,7 @@ class HeteroGraph : public BaseHeteroGraph {
 
 static std::tuple<
       HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>, std::vector<IdArray>>
-  CreateFromSharedMemHybrid(const int name);
+  CreateFromSharedMemHybrid(const int name, std::string dir);
   
   /**
    * @brief Create a heterograph from

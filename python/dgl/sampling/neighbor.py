@@ -628,7 +628,6 @@ def _sample_neighbors(
                 replace,
             )
         else:
-        # print(shm_file_name)
             subgidx, induced_nodes, induced_edges = _CAPI_DGLSampleNeighborsFusedHybrid(
                 g._graph,
                 nodes_all_types,

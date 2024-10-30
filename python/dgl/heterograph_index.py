@@ -1431,7 +1431,7 @@ def create_heterograph_from_shared_memory(name):
     g, ntypes, etypes = _CAPI_DGLHeteroCreateFromSharedMem(name)
     return g, list(ntypes), list(etypes)
 
-def create_heterograph_from_shared_memory_hybrid(array, layer, offset):
+def create_heterograph_from_shared_memory_hybrid(array, layer, offset, edge_dir):
     """Create a heterograph from shared memory with the given name.
 
     Paramaters
@@ -1447,7 +1447,7 @@ def create_heterograph_from_shared_memory_hybrid(array, layer, offset):
     etypes : list of str
         Names of edge types
     """
-    g, ntypes, etypes, induced_vertices = _CAPI_DGLHeteroCreateFromSharedMemHybrid(array, layer, offset)
+    g, ntypes, etypes, induced_vertices = _CAPI_DGLHeteroCreateFromSharedMemHybrid(array, layer, offset, edge_dir)
     return g, list(ntypes), list(etypes), induced_vertices
 
 def create_heterograph_from_gpu_shared_memory(name, offset, layer):

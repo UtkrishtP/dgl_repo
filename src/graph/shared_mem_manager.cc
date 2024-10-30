@@ -81,20 +81,6 @@ COOMatrix SharedMemManager::CopyToSharedMem<COOMatrix>(
       data_shared_mem, coo.row_sorted, coo.col_sorted);
 }
 
-template <>
-COOMatrix SharedMemManager::CopyToGPUSharedMem<COOMatrix>(
-    const COOMatrix &coo, std::string name) {
-  auto row_shared_mem = CopyToSharedMem(coo.row, name + "_row");
-  auto col_shared_mem = CopyToSharedMem(coo.col, name + "_col");
-  auto data_shared_mem = CopyToSharedMem(coo.data, name + "_data");
-  strm_->Write(coo.num_rows);
-  strm_->Write(coo.num_cols);
-  strm_->Write(coo.row_sorted);
-  strm_->Write(coo.col_sorted);
-  return COOMatrix(
-      coo.num_rows, coo.num_cols, row_shared_mem, col_shared_mem,
-      data_shared_mem, coo.row_sorted, coo.col_sorted);
-}
 
 template <>
 bool SharedMemManager::CreateFromSharedMem<NDArray>(
@@ -161,6 +147,7 @@ bool SharedMemManager::CreateFromSharedMemHybrid<NDArray>(
   bool is_null;
   this->Read(&is_null);
   if (is_null) {
+    std::cout << "NULL \n";
     *nd = NDArray::Empty(shape, dtype, ctx);
   } else {
     *nd = NDArray::EmptySharedHybrid(graph_name_ + name, shape, dtype, ctx, false);
@@ -169,10 +156,15 @@ bool SharedMemManager::CreateFromSharedMemHybrid<NDArray>(
 }
 
 template <>
-bool SharedMemManager::CreateFromSharedMemHybrid<COOMatrix>(
-    COOMatrix *coo, std::string name) {
-  CreateFromSharedMemHybrid(&coo->row, name + "_row");
-  CreateFromSharedMemHybrid(&coo->col, name + "_col");
+bool SharedMemManager::CreateFromSharedMemHybrid_<COOMatrix>(
+    COOMatrix *coo, std::string name, std::string dir) {
+  if(((dir == "in") ? EdgeDir::kIn : EdgeDir::kOut) == EdgeDir::kIn){
+    CreateFromSharedMemHybrid(&coo->row, name + "_col");
+    CreateFromSharedMemHybrid(&coo->col, name + "_row");
+  } else {
+    CreateFromSharedMemHybrid(&coo->col, name + "_row");
+    CreateFromSharedMemHybrid(&coo->row, name + "_col");
+  }
   // std::cout << "Shared data \n";
   // CreateFromSharedMem(&coo->data, name + "_data");
   coo->data = NDArray::Empty({0}, coo->row->dtype, coo->row->ctx);

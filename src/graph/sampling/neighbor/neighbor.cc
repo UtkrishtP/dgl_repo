@@ -608,15 +608,6 @@ SampleNeighborsFusedHybrid(
   shm.Write(is_csr); //csr
   shm.Write(is_csc); //csc
 
-  if (layer == 0){
-    IdArray ret = IdArray::EmptySharedHybrid("label" ,{nodes[0]->shape[0]}, nodes[0]->dtype, ctx, true);
-    shm.Write(ret->ndim);
-    shm.Write(ret->dtype);
-    shm.WriteArray(ret->shape, ret->ndim);
-    shm.Write(IsNullArray(ret));
-    ret.NDArray::CopyFrom(nodes[0]);
-  }
-
   for (dgl_type_t etype = 0; etype < hg->NumEdgeTypes(); ++etype) {
     auto pair = hg->meta_graph()->FindEdge(etype);
     const dgl_type_t src_vtype = pair.first;
@@ -753,39 +744,6 @@ SampleNeighborsFusedHybrid(
     }
   }
 
-  
-  // counting how many nodes of each ntype were sampled
-  num_nodes_per_type.resize(2 * hg->NumVertexTypes());
-  for (size_t i = 0; i < hg->NumVertexTypes(); i++) {
-    num_nodes_per_type[i] = new_nodes_vec[i].size();
-    num_nodes_per_type[hg->NumVertexTypes() + i] = nodes[i]->shape[0];
-    if (layer != -1) 
-    {
-      induced_vertices.push_back(
-          VecToIdArray(new_nodes_vec[i], sizeof(IdType) * 8));
-        
-    }
-    else
-    {
-      auto nbits = sizeof(IdType) * 8;
-      IdArray ret = IdArray::EmptySharedHybrid("_nfeat" ,{num_nodes_per_type[i]}, DGLDataType{kDGLInt, nbits, 1}, ctx, true);
-      shm.Write(ret->ndim);
-      shm.Write(ret->dtype);
-      shm.WriteArray(ret->shape, ret->ndim);
-      shm.Write(IsNullArray(ret));
-      if (nbits == 32) {
-        std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int32_t*>(ret->data));
-      } else if (nbits == 64) {
-        std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int64_t*>(ret->data));
-      } else {
-        LOG(FATAL) << "Only int32 or int64 is supported.";
-      }
-      induced_vertices.push_back(ret); // TODO: Add logic for heterograph later
-    }
-    // induced_vertices.push_back(
-    //       VecToIdArray(new_nodes_vec[i], sizeof(IdType) * 8));
-  }
-
   std::vector<HeteroGraphPtr> subrels(hg->NumEdgeTypes());
   for (dgl_type_t etype = 0; etype < hg->NumEdgeTypes(); ++etype) {
     auto pair = hg->meta_graph()->FindEdge(etype);
@@ -829,7 +787,6 @@ SampleNeighborsFusedHybrid(
   }
 
   HeteroSubgraph ret;
-
   const auto meta_graph = hg->meta_graph();
   const EdgeArray etypes = meta_graph->Edges("eid");
   const IdArray new_dst = Add(etypes.dst, hg->NumVertexTypes());
@@ -845,6 +802,16 @@ SampleNeighborsFusedHybrid(
   */
 
   for (dgl_type_t etype = 0; etype < hg->NumEdgeTypes(); ++etype) {
+    /*
+      sampled_coo_rows  = picked_coo_rows
+      graph.indices     = CSR matrix
+      Both of the above are return values from {rowwise_pick.h: 309}
+
+      if(EdgeDir:kIN):
+        graph.indices is row
+      else
+        graph.indices is col
+    */
     CSRMatrix graph = sampled_graphs[etype];
     shm.Write(sampled_coo_rows[etype]->ndim);
     shm.Write(sampled_coo_rows[etype]->dtype);
@@ -862,6 +829,44 @@ SampleNeighborsFusedHybrid(
     shm.Write(subrels[etype]->GetCOOMatrix(etype).col_sorted);
   }
 
+  // counting how many nodes of each ntype were sampled
+  num_nodes_per_type.resize(2 * hg->NumVertexTypes());
+  for (size_t i = 0; i < hg->NumVertexTypes(); i++) {
+    num_nodes_per_type[i] = new_nodes_vec[i].size();
+    num_nodes_per_type[hg->NumVertexTypes() + i] = nodes[i]->shape[0];
+    if (layer != -1) 
+    {
+      induced_vertices.push_back(
+          VecToIdArray(new_nodes_vec[i], sizeof(IdType) * 8));
+    }
+    else
+    {
+      auto nbits = sizeof(IdType) * 8;
+      IdArray ret = IdArray::EmptySharedHybrid("_nfeat" ,{num_nodes_per_type[i]}, DGLDataType{kDGLInt, nbits, 1}, ctx, true);
+      shm.Write(ret->ndim);
+      shm.Write(ret->dtype);
+      shm.WriteArray(ret->shape, ret->ndim);
+      if (nbits == 32) {
+        std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int32_t*>(ret->data));
+      } else if (nbits == 64) {
+        std::copy(new_nodes_vec[i].begin(), new_nodes_vec[i].end(), static_cast<int64_t*>(ret->data));
+      } else {
+        LOG(FATAL) << "Only int32 or int64 is supported.";
+      }
+      shm.Write(IsNullArray(ret));
+      induced_vertices.push_back(ret); // TODO: Add logic for heterograph later
+    }
+  }
+
+  if (layer == 0){
+    IdArray ret = IdArray::EmptySharedHybrid("_nfeat" ,{nodes[0]->shape[0]}, nodes[0]->dtype, ctx, true);
+    ret.NDArray::CopyFrom(nodes[0]);
+    shm.Write(ret->ndim);
+    shm.Write(ret->dtype);
+    shm.WriteArray(ret->shape, ret->ndim);
+    shm.Write(IsNullArray(ret));
+  }
+  
   std::vector<std::string> ntypes_ = {"_N", "_N"};
   std::vector<std::string> etypes_ = {"_E"};
   shm.Write(ntypes_); // Create logic for heterograph later (hg.NumVertexTypes())

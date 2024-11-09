@@ -12,6 +12,10 @@ from contextlib import contextmanager
 from functools import reduce
 from queue import Empty, Full, Queue
 
+from dgl.convert import hetero_from_shared_memory
+from multiprocessing import shared_memory
+from dgl.ndarray import *
+from dgl.transforms import to_block
 import numpy as np
 import psutil
 import torch
@@ -211,10 +215,10 @@ class TensorizedDataset(torch.utils.data.IterableDataset):
         # Use a shared memory array to permute indices for shuffling.  This is to make sure that
         # the worker processes can see it when persistent_workers=True, where self._indices
         # would not be duplicated every epoch.
-        # self._indices = torch.arange(
-        #     self._id_tensor.shape[0], dtype=torch.int64
-        # )
-        self._indices = torch.tensor(range(self._id_tensor.shape[0]), dtype=torch.int64)
+        self._indices = torch.arange(
+            self._id_tensor.shape[0], dtype=torch.int64
+        )
+        # self._indices = torch.tensor(range(self._id_tensor.shape[0]), dtype=torch.int64)
         if use_shared_memory:
             self._indices.share_memory_()
         self.batch_size = batch_size
@@ -403,11 +407,11 @@ def _prefetch_update_feats(
                 if (parent_key, type_) in gpu_caches:
                     cache, item_shape = gpu_caches[parent_key, type_]
                     values, missing_index, missing_keys = cache.query(ids)
-                    dataloader.transfer_mfg_gpu.clear()
+                    # dataloader.transfer_mfg_gpu.clear()
                     missing_values = get_storage_func(parent_key, type_).fetch(
                         missing_keys, device, pin_prefetcher
                     )                        
-                    dataloader.transfer_mfg_gpu.set()                         
+                    # dataloader.transfer_mfg_gpu.set()                         
                     cache.replace(
                         missing_keys, F.astype(missing_values, F.float32)
                     )
@@ -543,11 +547,15 @@ def _prefetch(batch, dataloader, stream):
 
             skip_mfg : '1', we skip sending the MFG to the GPU.
         '''
-        start = timer()
+        # start = timer()
+        # batch = recursive_apply(
+        #         batch, lambda x: x.to("cuda", non_blocking=True)
+            # )
         if dataloader.skip_mfg == 1 or dataloader.device == torch.device("cpu"):
-            batch = recursive_apply(
-                batch, lambda x: x.to("cpu", non_blocking=True)
-            )
+            # batch = recursive_apply(
+            #     batch, lambda x: x.to("cpu", non_blocking=True)
+            # )
+            return batch, feats, None
         else:
             batch = recursive_apply(
                 batch, lambda x: x.to("cuda", non_blocking=True)
@@ -600,13 +608,16 @@ def set_affinity(mask):
     cpuset = ctypes.c_ulong(mask)
     pthread_setaffinity_np(pthread_self(), ctypes.sizeof(cpuset), ctypes.byref(cpuset))
 
+epoch = 0
+pos = 0
+mini_batch = 0
+
 def _prefetcher_entry(self,
     dataloader_it, dataloader, queue, num_threads, stream, done_event, 
     skip_mfg,
 ):
     # PyTorch will set the number of threads to 1 which slows down pin_memory() calls
     # in main process if a prefetching thread is created.
-    # set_affinity({1})
     if num_threads is not None:
         torch.set_num_threads(num_threads)
 
@@ -620,34 +631,20 @@ def _prefetcher_entry(self,
                 batch, restore_parent_storage_columns, dataloader.graph
             )
             batch, feats, stream_event = _prefetch(batch, dataloader, stream)
-            
-            if not skip_mfg: 
-                _put_if_event_not_set(
+            _put_if_event_not_set(
                 queue, (batch, feats, stream_event, None), done_event
             )
-            else:
-                s = time.time()
-                batch = recursive_apply_pair(batch, feats, _assign_for)
-                (a, b, c) = batch
-                _put_if_event_not_set(
-                queue, c, done_event
-                )
-                dataloader.insert_mfg.set()
-                e = time.time()
-                dataloader.index_transfer += e - s
-
+        
+        _put_if_event_not_set(queue, (None, None, None, None), done_event)
         if skip_mfg:
             # To signal sampler to start next epoch.
             dataloader.samples_ready.set()
-            return 
-        _put_if_event_not_set(queue, (None, None, None, None), done_event)
     except:  # pylint: disable=bare-except
         _put_if_event_not_set(
             queue,
             (None, None, None, ExceptionWrapper(where="in prefetcher")),
             done_event,
         )
-
 
 # DGLGraphs have the semantics of lazy feature slicing with subgraphs.  Such behavior depends
 # on that DGLGraph's ndata and edata are maintained by Frames.  So to maintain compatibility
@@ -703,6 +700,7 @@ def restore_parent_storage_columns(item, g):
 class _PrefetchingIter(object):
     def __init__(self, dataloader, dataloader_it, num_threads=None):
         
+        # self.queue = Queue(dataloader.mini_batch + 1)
         self.queue = Queue(1)
         self.dataloader_it = dataloader_it
         self.dataloader = dataloader
@@ -724,8 +722,7 @@ class _PrefetchingIter(object):
                     self,
                     dataloader_it,
                     dataloader,
-                    dataloader.mfg_buffer if dataloader.skip_mfg else self.queue,
-                    # self.queue,
+                    self.queue,
                     num_threads,
                     self.stream,
                     self._done_event,
@@ -797,18 +794,20 @@ class _PrefetchingIter(object):
             if not self.use_thread
             else self._next_threaded()
         )
+        s = time.time()
         batch = recursive_apply_pair(batch, feats, _assign_for)
+        self.dataloader.index_transfer += time.time() - s
         if stream_event is not None:
             stream_event.wait()
-        global pre_nfeat, pre_mfg, sample_
-        #Update the prefetch time taken for nfeats/mfg.
-        self.dataloader.pre_nfeat = pre_nfeat
-        self.dataloader.pre_mfg = pre_mfg
+        # global pre_nfeat, pre_mfg, sample_
+        # #Update the prefetch time taken for nfeats/mfg.
+        # self.dataloader.pre_nfeat = pre_nfeat
+        # self.dataloader.pre_mfg = pre_mfg
 
-        # Update the sampling time
-        self.dataloader.sample = sample_
-        # Fetch the global variable using the getter function in pytorch_tensor.py
-        self.dataloader.scatter = scatter_gather_()
+        # # Update the sampling time
+        # self.dataloader.sample = sample_
+        # # Fetch the global variable using the getter function in pytorch_tensor.py
+        # self.dataloader.scatter = scatter_gather_()
         return batch
 
 
@@ -1065,11 +1064,19 @@ class DataLoader(torch.utils.data.DataLoader):
         index_transfer=0,
         gather_pin_only=False,
         dataloader=None,
-        mfg_buffer=None,
+        nfeat_shapes=None,
+        label_shapes=None,
         cfn=None,
         samples_ready=None,
         insert_mfg=None,
         transfer_mfg_gpu=None,
+        wait_time=0,
+        mfg_transfer=0,
+        ids_transfer=0,
+        mini_batch=0,
+        queue_size=0,
+        head=0,
+        tail=0,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1134,8 +1141,16 @@ class DataLoader(torch.utils.data.DataLoader):
         indices_device = None
         self.samples_ready = samples_ready
         self.insert_mfg = insert_mfg
-        self.mfg_buffer = mfg_buffer
+        self.nfeat_shapes = nfeat_shapes
+        self.label_shapes = label_shapes
         self.transfer_mfg_gpu = transfer_mfg_gpu
+        self.wait_time = wait_time
+        self.mfg_transfer = mfg_transfer
+        self.ids_transfer = ids_transfer
+        self.mini_batch = mini_batch
+        self.queue_size = queue_size
+        self.head = head
+        self.tail = tail
         try:
             if isinstance(indices, Mapping):
                 indices = {
@@ -1288,11 +1303,14 @@ class DataLoader(torch.utils.data.DataLoader):
             **kwargs,
         )
 
+        s = time.time()
         if isinstance(self.graph, DGLGraph):
             # Check graph and indices device as well as num_workers
-            if use_uva or cgg_on_demand or cgg:
+            # if use_uva or cgg_on_demand or cgg:
+            if use_uva:
                 self.graph.create_formats_()
                 self.graph.pin_memory_()
+        print("Time to pin memory : ", time.time() - s)
         
     def _cgg_on_demand(self, type, node_or_edge, ids):
         """ 
@@ -1312,9 +1330,9 @@ class DataLoader(torch.utils.data.DataLoader):
             gpu_caches = self.graph._gpu_caches["node" if node_or_edge == "_N" else "edge"]
             cache, item_shape = gpu_caches[type, node_or_edge]
             values, missing_index, missing_keys = cache.query(ids)
-            self.transfer_mfg_gpu.clear()
+            # self.transfer_mfg_gpu.clear()
             missing_values = self.graph.get_node_storage(type, node_or_edge).fetch(missing_keys, self.device)
-            self.transfer_mfg_gpu.set()                                 
+            # self.transfer_mfg_gpu.set()                                 
             cache.replace(
                 missing_keys, F.astype(missing_values, F.float32)
             )
@@ -1651,46 +1669,3 @@ class GraphDataLoader(torch.utils.data.DataLoader):
     """
 
     collator_arglist = inspect.getfullargspec(GraphCollator).args
-
-    def __init__(
-        self, dataset, collate_fn=None, use_ddp=False, ddp_seed=0, **kwargs
-    ):
-        collator_kwargs = {}
-        dataloader_kwargs = {}
-        for k, v in kwargs.items():
-            if k in self.collator_arglist:
-                collator_kwargs[k] = v
-            else:
-                dataloader_kwargs[k] = v
-
-        self.use_ddp = use_ddp
-        if use_ddp:
-            self.dist_sampler = _create_dist_sampler(
-                dataset, dataloader_kwargs, ddp_seed
-            )
-            dataloader_kwargs["sampler"] = self.dist_sampler
-
-        if collate_fn is None and kwargs.get("batch_size", 1) is not None:
-            collate_fn = GraphCollator(**collator_kwargs).collate
-
-        super().__init__(
-            dataset=dataset, collate_fn=collate_fn, **dataloader_kwargs
-        )
-
-    def set_epoch(self, epoch):
-        """Sets the epoch number for the underlying sampler which ensures all replicas
-        to use a different ordering for each epoch.
-
-        Only available when :attr:`use_ddp` is True.
-
-        Calls :meth:`torch.utils.data.distributed.DistributedSampler.set_epoch`.
-
-        Parameters
-        ----------
-        epoch : int
-            The epoch number.
-        """
-        if self.use_ddp:
-            self.dist_sampler.set_epoch(epoch)
-        else:
-            raise DGLError("set_epoch is only available when use_ddp is True.")

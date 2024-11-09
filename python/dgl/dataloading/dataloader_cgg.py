@@ -885,7 +885,7 @@ def _get_device(device):
     return device
 
 
-class DataLoader(torch.utils.data.DataLoader):
+class DataLoaderCGG(torch.utils.data.DataLoader):
     """Sampled graph data loader. Wrap a :class:`~dgl.DGLGraph` and a
     :class:`~dgl.dataloading.Sampler` into an iterable over mini-batches of samples.
 

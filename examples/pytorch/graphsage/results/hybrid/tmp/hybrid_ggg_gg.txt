@@ -1,0 +1,280 @@
+# Sampling num_threads = 1
+
+Training process launched: 1732513443.5822656 
+Reading from shared memory: 0.0007004737854003906s
+Training process started: 1732513474.3421257 
+Total MB consumed: 0, 0
+GGG 9 : 261.8186s, 261.8155, 1732513736.161315
+GG done for epoch 1.0 : 190.3665s
+GG done for epoch 2.0 : 187.7068s
+GG done for epoch 3.0 : 185.1684s
+Total MB consumed: 175782, 175782
+GGG 5 : 524.8766s, 263.05465625, 1732514624.097276
+GG done for epoch 4.0 : 188.2145s
+GG done for epoch 5.0 : 187.3921s
+GG done for epoch 6.0 : 186.7375s
+Total MB consumed: 351564, 351564
+GGG 1 : 787.5529s, 262.6729375, 1732515509.3925786
+GG done for epoch 7.0 : 188.5370s
+Total MB consumed: 410158, 411979
+Train: 2224.3119003772736s, GGG time: 787.5529s, CGG time:1436.7585s GPU read time:162.1975s
+MFG transfer launched: 1732513443.5957603 
+MFG Transfer E2E: 2359.2474s, CPU Shared read: 134.86549520492554s,Enqueue: 65.3233s, TR: 0.0000s,GPU consumer wait: 138.3901s, HBM full wait time: 90.1624s,1732515837.0452595 
+2024-11-25 11:13:13 Dataset igb-large, Batch size 1024, , Cache Size 80449000, Hybrid 1, Epochs 10
+Launching sampler processes 1732513441.4328108 
+Starting sampling 1732513473.5755901 
+Sampling time: 2362.1890s , Creating CPU shared memory: 47.6763s, Wait time: 1.2803s, 1732515837.0449398
+
+
+Training process launched: 1732518533.224233 
+Reading from shared memory: 0.0006887912750244141s
+Training process started: 1732518564.0104535 
+Total MB consumed: 0, 0
+GGG 9 : 86.8543s, 86.853390625, 1732518650.8654022
+GG done for epoch 1.0 : 44.3932s
+Total MB consumed: 7325, 7325
+GGG 7 : 171.9652s, 85.1098125, 1732518949.4604082
+GG done for epoch 2.0 : 44.3278s
+Total MB consumed: 14650, 14650
+GGG 5 : 257.1461s, 85.1798046875, 1732519249.9645307
+MFG transfer launched: 1732518533.274903 
+2024-11-25 12:38:04 Dataset igb-large, Batch size 8192, , Cache Size 80449000, Hybrid 1, Epochs 10
+Launching sampler processes 1732518531.0466788 
+Starting sampling 1732518563.2483423
+
+MFG transfer launched: 1732597975.0469656 
+Training process launched: 1732597975.072846 
+Reading from shared memory: 0.0006887912750244141s
+Training process started: 1732598005.9317908 
+Total MB consumed: 0, 0
+GGG 9 : 262.5103s, 262.507375, 1732598268.4426863
+GG done for epoch 1.0 : 29.481444468348553, 132.07871712160124 196.9547s
+GG done for epoch 2.0 : 57.43001841298063, 261.5216270381246 190.7416s
+GG done for epoch 3.0 : 86.59866661230092, 393.1838788451156 191.4786s
+Total MB consumed: 175782, 175782
+GGG 5 : 526.1722s, 263.65859375, 1732599155.654062
+GG done for epoch 4.0 : 28.011370419232463, 129.6220951101765 191.1429s
+GG done for epoch 5.0 : 56.083899658264244, 259.3612620246426 191.3780s
+GG done for epoch 6.0 : 85.26863007113764, 390.76147996320174 191.0863s
+Total MB consumed: 351564, 351564
+2024-11-26 10:41:29 Dataset igb-large, Batch size 1024, , Cache Size 80449000, Hybrid 1, Epochs 10
+Launching sampler processes 1732597972.9166462 
+Starting sampling 1732598005.1680028 
+MFG transfer launched: 1732600377.9871936 
+
+Training process launched: 1732600378.0765004 
+Reading from shared memory: 0.0007045269012451172s
+Training process started: 1732600408.9502192 
+Total MB consumed: 0, 0
+GGG 9 : 86.8306s, 1732600495.7808404
+GG done for epoch 1.0 : 0, 0 45.0402s
+Total MB consumed: 7325, 7325
+GGG 7 : 172.0031s, 1732600797.4602087
+GG done for epoch 2.0 : 0, 0 44.8216s
+Total MB consumed: 14650, 14650
+GGG 5 : 257.1670s, 1732601098.5302706
+GG done for epoch 3.0 : 0, 0 44.8796s
+Total MB consumed: 21975, 21975
+2024-11-26 11:22:08 Dataset igb-large, Batch size 8192, , Cache Size 80449000, Hybrid 1, Epochs 10
+Launching sampler processes 1732600375.854333 
+Starting sampling 1732600408.1890464 
+
+Training process launched: 1732602093.9010105 
+Reading from shared memory: 0.0007004737854003906s
+Training process started: 1732602126.0474007 
+Total MB consumed: 0, 0
+GGG 9 : 262.4243s, 1732602388.471779
+GG done for epoch 1.0 : 0, 0 196.8693s
+GG done for epoch 2.0 : 0, 0 184.6029s
+GG done for epoch 3.0 : 0, 0 186.6270s
+Total MB consumed: 175782, 175782
+GGG 5 : 524.2658s, 1732603274.3652558
+GG done for epoch 4.0 : 0, 0 185.4577s
+MFG transfer launched: 1732602093.875131 
+2024-11-26 11:50:44 Dataset igb-large, Batch size 1024, , Cache Size 80449000, Hybrid 1, Epochs 10
+Launching sampler processes 1732602091.7163138 
+Starting sampling 1732602125.059787 
+
+Training process launched: 1732603855.3648736 
+Reading from shared memory: 0.000698089599609375s
+Training process started: 1732603895.8351066 
+Total MB consumed: 0, 0
+GGG 9 : 7.4799s, 7.479765625, 1732603903.3154933
+GG done for epoch 1.0 : 0.7560667858123777, 3.288951719284057 4.2002s
+Total MB consumed: 129, 129
+GGG 7 : 13.6777s, 6.19778564453125, 1732603923.7235875
+GG done for epoch 2.0 : 0.7407792634963989, 3.280001292228701 4.1182s
+Total MB consumed: 258, 258
+GGG 5 : 19.8782s, 6.20037744140625, 1732603944.225186
+GG done for epoch 3.0 : 0.7378745886087417, 3.288052165031432 4.1233s
+Total MB consumed: 387, 387
+GGG 3 : 26.0896s, 6.21130810546875, 1732603964.6357212
+GG done for epoch 4.0 : 0.745372863769531, 3.2944607000350956 4.1377s
+Total MB consumed: 516, 516
+GGG 1 : 32.3194s, 6.22968701171875, 1732603984.9295945
+GG done for epoch 5.0 : 0.7381829746961591, 3.298189254760744 4.1350s
+Total MB consumed: 645, 645
+Train: 103.0997908115387s, GGG time: 32.3194s, CGG time:70.7801s GPU read time:0.4697s
+MFG transfer launched: 1732603855.3242264 
+MFG Transfer E2E: 123.5102s, CPU Shared read: 0.5120408535003662s,Enqueue: 1.3394s, TR: 0.0000s,GPU consumer wait: 0.3447s, HBM full wait time: 7.3519s,1732604019.2930014 
+2024-11-26 12:20:43 Dataset friendster, Batch size 8192, , Cache Size 12000000, Hybrid 1, Epochs 10
+Launching sampler processes 1732603853.1820138 
+Starting sampling 1732603895.076767 
+Sampling time: 124.2092s , Creating CPU shared memory: 9.3125s, Wait time: 0.0068s, 1732604019.2927105
+
+Training process launched: 1732604029.1031094 
+Reading from shared memory: 0.0006804466247558594s
+Training process started: 1732604069.5666568 
+Total MB consumed: 0, 0
+GGG 9 : 11.2779s, 11.2777841796875, 1732604080.8451564
+GG done for epoch 1.0 : 1.4914373741447888, 5.011112577438353 7.2843s
+Total MB consumed: 1026, 1026
+GGG 7 : 21.5553s, 10.277212890625, 1732604106.5591338
+GG done for epoch 2.0 : 1.479366914033891, 5.045160646677014 7.1609s
+Total MB consumed: 2052, 2052
+GGG 5 : 31.8405s, 10.285046875, 1732604131.7125416
+GG done for epoch 3.0 : 1.476562240481376, 5.0532891516685465 7.1567s
+Total MB consumed: 3078, 3078
+GGG 3 : 42.1833s, 10.342642578125, 1732604156.8322783
+GG done for epoch 4.0 : 1.4804599997997292, 5.081708480119704 7.2114s
+Total MB consumed: 4104, 4104
+GGG 1 : 52.4808s, 10.2973720703125, 1732604181.9148986
+GG done for epoch 5.0 : 1.4795731196999569, 5.058732573032375 7.1808s
+Total MB consumed: 5130, 5130
+Train: 127.16305732727051s, GGG time: 52.4808s, CGG time:74.6819s GPU read time:2.8626s
+MFG transfer launched: 1732604029.0161812 
+MFG Transfer E2E: 152.5677s, CPU Shared read: 3.258622407913208s,Enqueue: 2.7500s, TR: 0.0000s,GPU consumer wait: 0.0532s, HBM full wait time: 8.3809s,1732604221.7307222 
+2024-11-26 12:23:44 Dataset friendster, Batch size 1024, , Cache Size 12000000, Hybrid 1, Epochs 10
+Launching sampler processes 1732604026.8973958 
+Starting sampling 1732604068.7918963 
+Sampling time: 152.8801s , Creating CPU shared memory: 2.4207s, Wait time: 0.0584s, 1732604221.7304642
+
+Training process launched: 1732604531.152718 
+Reading from shared memory: 0.0006899833679199219s
+Training process started: 1732604566.6064682 
+Total MB consumed: 0, 0
+GGG 9 : 5.2543s, 5.2542705078125, 1732604571.861372
+GG done for epoch 1.0 : 0.6639124171733858, 2.331444605827332 3.1063s
+GG done for epoch 2.0 : 1.3197434591054913, 4.64864198875427 3.0565s
+Total MB consumed: 256, 256
+GGG 6 : 9.1569s, 3.9025087890625, 1732604583.8659866
+GG done for epoch 3.0 : 0.6558053777217866, 2.3308636713027955 3.0657s
+GG done for epoch 4.0 : 1.3087744972705844, 4.636650074005128 3.0432s
+Total MB consumed: 512, 512
+GGG 3 : 13.0486s, 3.8916865234375, 1732604596.490023
+GG done for epoch 5.0 : 0.6593827202320097, 2.3460237193107614 3.0850s
+GG done for epoch 6.0 : 1.3117385597228997, 4.658052638053893 3.0494s
+Total MB consumed: 768, 768
+GGG 0 : 16.9581s, 3.90942236328125, 1732604609.0442939
+Train: 42.43788552284241s, GGG time: 16.9581s, CGG time:25.4795s GPU read time:0.4501s
+MFG transfer launched: 1732604531.0898798 
+MFG Transfer E2E: 47.5037s, CPU Shared read: 0.5193526744842529s,Enqueue: 1.1450s, TR: 0.0000s,GPU consumer wait: 0.0000s, HBM full wait time: 3.0621s,1732604613.8329165 
+2024-11-26 12:31:59 Dataset twitter, Batch size 8192, , Cache Size 12000000, Hybrid 1, Epochs 10
+Launching sampler processes 1732604528.9541702 
+Starting sampling 1732604565.8415058 
+Sampling time: 45.5258s , Creating CPU shared memory: 9.3347s, Wait time: 0.0084s, 1732604611.3757193
+
+Training process launched: 1732604628.8354363 
+Reading from shared memory: 0.0006961822509765625s
+Training process started: 1732604664.2990506 
+Total MB consumed: 0, 0
+GGG 9 : 11.0180s, 11.01785546875, 1732604675.3175921
+GG done for epoch 1.0 : 1.1422828814983372, 4.898541220664985 6.9216s
+GG done for epoch 2.0 : 2.3152270739674576, 9.93961440849305 6.8831s
+GG done for epoch 3.0 : 3.480249059200275, 14.966881483077998 6.8401s
+GG done for epoch 4.0 : 4.645380549550059, 19.957480173110955 6.8259s
+GG done for epoch 5.0 : 5.813598373651516, 24.94384369087214 6.8180s
+GG done for epoch 6.0 : 6.971626054406183, 29.888906891345876 6.7342s
+Total MB consumed: 6102, 6102
+GGG 2 : 21.2232s, 10.20502734375, 1732604727.7707794
+GG done for epoch 7.0 : 1.1715936330556858, 4.950849243640902 6.8441s
+GG done for epoch 8.0 : 2.3405707858800913, 9.988764605998991 6.8708s
+Total MB consumed: 8136, 8878
+Train: 77.21080994606018s, GGG time: 21.2232s, CGG time:55.9874s GPU read time:4.6279s
+MFG transfer launched: 1732604628.7802997 
+MFG Transfer E2E: 82.5988s, CPU Shared read: 4.159347057342529s,Enqueue: 2.6498s, TR: 0.0000s,GPU consumer wait: 0.0000s, HBM full wait time: 4.9864s,1732604746.3589752 
+2024-11-26 12:33:44 Dataset twitter, Batch size 1024, , Cache Size 12000000, Hybrid 1, Epochs 10
+Launching sampler processes 1732604626.663488 
+Starting sampling 1732604663.5162325 
+Sampling time: 80.2971s , Creating CPU shared memory: 2.4267s, Wait time: 0.0516s, 1732604743.8649797
+
+Training process launched: 1732605069.2294316 
+Reading from shared memory: 0.0006947517395019531s
+Training process started: 1732605105.347105 
+Total MB consumed: 0, 0
+GGG 9 : 6.3739s, 6.3737841796875, 1732605111.7215083
+GG done for epoch 1.0 : 0.3688494076728819, 2.259608417034151 2.7771s
+Total MB consumed: 148, 148
+GGG 7 : 11.6240s, 5.2500341796875, 1732605126.9721437
+GG done for epoch 2.0 : 0.3464848654270171, 2.267094495773316 2.7221s
+Total MB consumed: 296, 296
+GGG 5 : 16.8775s, 5.25348876953125, 1732605142.377551
+GG done for epoch 3.0 : 0.3398382720947265, 2.2606094751358032 2.7083s
+Total MB consumed: 444, 444
+GGG 3 : 22.1075s, 5.22991748046875, 1732605157.6771395
+GG done for epoch 4.0 : 0.337888288140297, 2.262136513233185 2.7074s
+Total MB consumed: 592, 592
+GGG 1 : 27.3459s, 5.23831201171875, 1732605172.9856892
+GG done for epoch 5.0 : 0.3373100806474685, 2.2650648012161256 2.7092s
+Total MB consumed: 740, 740
+Train: 77.67974042892456s, GGG time: 27.3459s, CGG time:50.3334s GPU read time:0.4966s
+MFG transfer launched: 1732605069.1707873 
+MFG Transfer E2E: 92.7586s, CPU Shared read: 0.5826864242553711s,Enqueue: 1.5460s, TR: 0.0000s,GPU consumer wait: 0.2443s, HBM full wait time: 6.6021s,1732605198.3196752 
+2024-11-26 12:40:57 Dataset ogbn-papers100M, Batch size 8192, , Cache Size 12000000, Hybrid 1, Epochs 10
+Launching sampler processes 1732605066.9570081 
+Starting sampling 1732605104.5532634 
+Sampling time: 93.7579s , Creating CPU shared memory: 9.8299s, Wait time: 0.0082s, 1732605198.3193936
+
+Training process launched: 1732605208.4482493 
+Reading from shared memory: 0.0006935596466064453s
+Training process started: 1732605244.135765 
+Total MB consumed: 0, 0
+GGG 9 : 10.2970s, 10.2968388671875, 1732605254.4333224
+GG done for epoch 1.0 : 0.8061758391261099, 4.4686313929557775 6.1484s
+Total MB consumed: 1179, 1179
+GGG 7 : 19.5833s, 9.2861943359375, 1732605270.6400278
+GG done for epoch 2.0 : 0.7957120321393, 4.533493154525758 6.0429s
+Total MB consumed: 2358, 2358
+GGG 5 : 28.8729s, 9.289466796875, 1732605286.7184703
+GG done for epoch 3.0 : 0.8155859512686733, 4.591262426614763 6.1513s
+Total MB consumed: 3537, 3537
+GGG 3 : 38.2827s, 9.4096650390625, 1732605302.8331053
+GG done for epoch 4.0 : 0.8113046073317527, 4.621252763509752 6.1775s
+Total MB consumed: 4716, 4716
+GGG 1 : 47.4793s, 9.196474609375, 1732605318.6085894
+GG done for epoch 5.0 : 0.8056917750239367, 4.506526018619535 6.0462s
+Total MB consumed: 5895, 5895
+Train: 81.25291705131531s, GGG time: 47.4793s, CGG time:33.7732s GPU read time:3.2345s
+MFG transfer launched: 1732605208.3898077 
+MFG Transfer E2E: 97.4794s, CPU Shared read: 3.3787360191345215s,Enqueue: 2.4478s, TR: 0.0000s,GPU consumer wait: 0.0388s, HBM full wait time: 7.9111s,1732605341.3840039 
+2024-11-26 12:43:23 Dataset ogbn-papers100M, Batch size 1024, , Cache Size 12000000, Hybrid 1, Epochs 10
+Launching sampler processes 1732605206.2108505 
+Starting sampling 1732605243.33988 
+Sampling time: 97.9923s , Creating CPU shared memory: 2.5427s, Wait time: 0.0516s, 1732605341.3837729
+
+Training process launched: 1732862035.43534 
+Reading from shared memory: 0.0006914138793945312s
+Training process started: 1732862066.2562664 
+Total MB consumed: 0, 0
+GGG 9 : 263.2774s, 263.26603125, 1732862329.5340924
+GG done for epoch 1.0 : 0, 0, 24.23658776283264 191.0366s
+GG done for epoch 2.0 : 0, 0, 47.406028509140015 187.1023s
+GG done for epoch 3.0 : 0, 0, 70.43135905265808 187.4863s
+Total MB consumed: 175782, 175782
+GGG 5 : 524.7383s, 261.448875, 1732863213.8894405
+GG done for epoch 4.0 : 0, 0, 93.62679719924927 186.2120s
+GG done for epoch 5.0 : 0, 0, 117.03408718109131 188.2241s
+GG done for epoch 6.0 : 0, 0, 139.8593394756317 185.9902s
+Total MB consumed: 351564, 351564
+GGG 1 : 787.4965s, 262.746, 1732864100.3899293
+GG done for epoch 7.0 : 0, 0, 162.88620018959045 186.1107s
+Total MB consumed: 410158, 413685
+Train: 2220.9255225658417s, GGG time: 787.4965s, CGG time:1433.4283s GPU read time:162.8862s
+MFG transfer launched: 1732862035.344402 
+MFG Transfer E2E: 2357.8695s, CPU Shared read: 135.36458134651184s,Enqueue: 65.7235s, TR: 0.0000s,GPU consumer wait: 140.3521s, HBM full wait time: 92.1605s,1732864427.535097 
+2024-11-29 12:03:06 Dataset igb-large, Batch size 1024, , Cache Size 80449000, Hybrid 1, Epochs 10
+Launching sampler processes 1732862033.2114422 
+Starting sampling 1732862065.4962332 
+Sampling time: 2360.7336s , Creating CPU shared memory: 46.3591s, Wait time: 1.3049s, 1732864427.5347738
+
+====================================================================

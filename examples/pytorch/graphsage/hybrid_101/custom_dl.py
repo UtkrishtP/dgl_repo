@@ -134,18 +134,19 @@ class IGB260M(object):
         if self.size == 'large' or self.size == 'full':
             num_nodes = self.num_nodes()
             if self.num_classes == 19:
-                # path = osp.join(self.dir, 'full', 'processed', 'paper', 'node_label_19.npy')
+                # path = osp.join(self.dir, self.size, 'processed', 'paper', 'node_label_19.npy')
                 path = '/data/igb_large/full_node_labels.npy'
                 # node_labels = np.memmap(path, dtype='float32', mode='r',  shape=(num_nodes))
                 node_labels = np.load(path)
                 # Actual number 227130858
             else:
-                path = osp.join(self.dir, 'full', 'processed', 'paper', 'node_label_2K.npy')
+                path = osp.join(self.dir, self.size, 'processed', 'paper', 'node_label_2K.npy')
                 node_labels = np.memmap(path, dtype='float32', mode='r',  shape=(num_nodes))
                 # Actual number 157675969
 
         else:
             if self.num_classes == 19:
+                # print("Here 19")
                 path = osp.join(self.dir, self.size, 'processed', 'paper', 'node_label_19.npy')
             else:
                 path = osp.join(self.dir, self.size, 'processed', 'paper', 'node_label_2K.npy')
@@ -231,8 +232,6 @@ class IGB260MDGLDataset(DGLDataset):
 
     def __len__(self):
         return len(self.graphs)
-
-
 
 
 class Twitter(object):

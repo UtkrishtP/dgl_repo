@@ -6,7 +6,7 @@ from dgl.utils.pin_memory import pin_memory_inplace
 import dgl
 from dgl.data import AsNodePredDataset
 from ogb.nodeproppred import DglNodePropPredDataset
-import args, time, argparse, threading, json, gc
+import args, time, argparse, threading, json, gc, os
 from args import get_args
 from multiprocessing import Manager
 
@@ -50,6 +50,12 @@ def fetch_shapes():
 def serialize_dtypes(dtypes):
     return [str(dtype).split('.')[-1] for dtype in dtypes]
 
+def clear_shared_memory():
+    """Clear all files from /dev/shm using os.system."""
+    command = "rm -rf /dev/shm/*"
+    print(f"Executing command: {command}")
+    os.system(command)  # Execute the command directly
+
 def host_datas(e):
     # global shapes, dtypes, num_classes
     if args.dataset == "friendster":
@@ -73,6 +79,8 @@ def host_datas(e):
         train_idx = torch.nonzero(dataset[0].ndata['train_mask'], as_tuple=True)[0]
         val_idx = torch.nonzero(dataset[0].ndata['val_mask'], as_tuple=True)[0]
         test_idx = torch.nonzero(dataset[0].ndata['test_mask'], as_tuple=True)[0]
+        # print("Label: ", dataset[0].ndata['label'])
+        # print(torch.all(dataset[0].ndata['label'] < num_classes).item())
     else:
         dataset = AsNodePredDataset(
             DglNodePropPredDataset(
@@ -86,7 +94,7 @@ def host_datas(e):
     g = dataset[0]
     g.ndata["label"] = g.ndata["label"].type(torch.long)
 
-    # Creating shared + pinned memory regions for graph formats {coo, csr, csc}, nfeat, labels, train_idx
+    # Creating shared + pinned memory regions for graph formats {coo, csr, csc}, nfeat, labels, {train/val/test}_idx
     shapes = [g.ndata["feat"].shape, (2, g.edges()[0].shape[0]), g.ndata["label"].shape, train_idx.shape, val_idx.shape, test_idx.shape]
     dtypes = [g.ndata["feat"].dtype, g.edges()[0].dtype, g.ndata["label"].dtype, train_idx.dtype, val_idx.dtype, test_idx.dtype]
     start = time.time()
@@ -122,4 +130,4 @@ if __name__ == "__main__":
     try:
         event.wait()
     except KeyboardInterrupt:
-        print('Release shm')
+        clear_shared_memory()

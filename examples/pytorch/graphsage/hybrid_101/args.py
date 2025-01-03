@@ -2,7 +2,7 @@ import argparse
 
 
 # Function to parse fanout input
-def parse_fan_out(fan_out_str):
+def parse_str_to_list(fan_out_str):
     """Converts comma-separated string into a list of integers."""
     return [int(f) for f in fan_out_str.split(",")]
 
@@ -23,11 +23,11 @@ def get_args():
         help="data type(float, bfloat16)",
     )
     parser.add_argument("--cgg", type=bool, default=True, choices=[True, False])
+    parser.add_argument("--pin_prefetcher", type=bool, default=True, choices=[True, False])
     parser.add_argument(
-        "--set",
+        "--variant",
         type=str,
         default="ggg",
-        choices=["ggg", "g__", "cc_", "c__"],
         help="Set of operations (S,E,T) to be performed & where",
     )
     parser.add_argument(
@@ -54,7 +54,11 @@ def get_args():
     parser.add_argument(
         "--mfg_size",
         type=int,
-        default=5,
+        help="Specify the size of shared memory region in GBs"
+    )
+    parser.add_argument(
+        "--mfg_transfer",
+        type=float,
         help="Specify the size of shared memory region in GBs"
     )
     parser.add_argument(
@@ -80,7 +84,7 @@ def get_args():
 
     parser.add_argument(
         "--ggg_footprint",
-        type=int,
+        type=float,
         default=5,
     )
     
@@ -91,6 +95,12 @@ def get_args():
     )
 
     parser.add_argument(
+        "--hbm_slack",
+        type=int,
+        default=2,
+    )
+    
+    parser.add_argument(
         "--prefetch_thread",
         type=int,
         default=0,
@@ -99,7 +109,7 @@ def get_args():
     parser.add_argument(
         "--path",
         type=str,
-        default="/data/",
+        default="/data/igb_large/",
         help="path containing the datasets",
     )
     parser.add_argument(
@@ -142,6 +152,44 @@ def get_args():
         default=380,
     )
 
+    parser.add_argument(
+        "--diff",
+        type=int,
+        default=256,
+    )
+    
+    parser.add_argument(
+        "--num_threads",
+        type=int,
+        default=64,
+    )
+    
+    parser.add_argument(
+        "--mps_split",
+        type=int,
+        default=0,
+    )
+
+    parser.add_argument(
+        "--mfg_per_mb",
+        type=str,
+        default="1",
+    )
+
+    parser.add_argument(
+        "--t_sample",
+        type=float,
+    )
+
+    parser.add_argument(
+        "--t_et",
+        type=float,
+    )
+
+    parser.add_argument(
+        "--t_ggg",
+        type=float,
+    )
     # Model
     parser.add_argument(
         "--model_type", type=str, default="sage", choices=["gat", "sage", "gcn"]
@@ -156,6 +204,26 @@ def get_args():
         default="15,10,5",
         help="Comma-separated fanout values for each layer (e.g.,\
             '15,10,5' for fanout for [layer-0, layer-1, layer-2]).",
+    )
+
+    parser.add_argument(
+        "--mfg_core",
+        type=str,
+        default="63",
+        help="Comma-separated core #s",
+    )
+
+    parser.add_argument(
+        "--train_core",
+        type=str,
+        default="31",
+        help="Comma-separated core #s",
+    )
+
+    parser.add_argument(
+        "--enable_affinity",
+        type=int,
+        default=0,
     )
     parser.add_argument("--hidden_channels", type=int, default=128)
     parser.add_argument("--learning_rate", type=int, default=0.01)
@@ -175,7 +243,9 @@ def get_args():
     args = parser.parse_args()
 
     # Parse the fanout string into a list of integers
-    args.fan_out = parse_fan_out(args.fan_out)
+    args.fan_out = parse_str_to_list(args.fan_out)
+    args.mfg_core = parse_str_to_list(args.mfg_core)
+    args.train_core = parse_str_to_list(args.train_core)
 
     return args
 

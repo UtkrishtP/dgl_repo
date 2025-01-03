@@ -186,6 +186,7 @@ def training_worker(sampler_, size, fanout, train_, model, batch_size, mini_batc
             break
         start = time.time()
         total_loss = run_ggg(ggg_train_dataloader, model, opt,)
+        # time.sleep(100)
         ggg_time += time.time() - start
         acc = evaluate(model, g, val_dataloader, out_size)
         file1.write(
@@ -301,7 +302,7 @@ def mfg_transfer_worker(mfg, sampling, tail, head, mini_batch,
             blocks = []
             fetch_mfg_cpu_shm(blocks, array, read_offset, fanout, edge_dir)
             read_time += time.time() - s1
-            # print("Consumer: ", tail.value, tail.value % mini_batch, time.time(), end=" ", flush=True)
+            print("Consumer: ", tail.value, tail.value % mini_batch, time.time()) #, end=" ", flush=True)
             # print_offset(read_offset)
             tail.value += 1 
             # Fetching MFG sizes

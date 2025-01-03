@@ -16,10 +16,10 @@ from dgl.dataloading import (
     SAINTSampler,
 )
 from ogb.nodeproppred import DglNodePropPredDataset
-import time
+import time, psutil
 from concurrent.futures import ThreadPoolExecutor
-from dgl.utils.internal import recursive_apply
-from dgl.createshm import create_shmarray, create_shmoffset, reset_shm, get_shm_ptr, print_offset
+from dgl.utils.internal import recursive_apply, set_num_threads
+from dgl.createshm import create_shmarray, create_shmoffset, reset_shm, get_shm_ptr, print_offset, read_offset
 import ctypes
 from dgl.utils.shared_mem import create_shared_mem_array, get_shared_mem_array
 from dgl.convert import hetero_from_shared_memory
@@ -31,6 +31,16 @@ from queue import Empty, Full, Queue
 from pynvml import *
 import subprocess, os
 from datetime import datetime
+import math
+from tabulate import tabulate
+from mps_utils import *
+import utils as util
+os.environ["DGL_BENCH_DEVICE"] = "gpu"
+# @util.benchmark("time")
+# sys.path.append("/media/utkrisht/deepgraph/")
+# from benchmarks.benchmarks import utils
+SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 64
+SHARED_MEM_GPU_METAINFO_SIZE_MAX = (1024 * 48) + (3 * 64)
 
 class SAGE(nn.Module):
     def __init__(self, in_size, hid_size, out_size, num_layers):

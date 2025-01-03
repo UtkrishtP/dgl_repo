@@ -74,9 +74,9 @@ SharedMemory::~SharedMemory() {
 
 void *SharedMemory::CreateHybrid(size_t sz) {
   this->own_ = true;
-  size_t offset = *(ptr_offset + 1);
+  size_t offset = *((size_t*)ptr_offset + 1);
   // std::cout << "Offset: " << offset << std::endl;
-  *(ptr_offset + 1) += sz;
+  *((size_t*)ptr_offset + 1) += sz;
   this->size_ = sz;
   return static_cast<char*>(ptr_array) + offset;
   // We need to create a shared-memory file.
@@ -124,9 +124,9 @@ void *SharedMemory::OpenHybrid(size_t sz){
   // *(ptr_read_offset + 1) += sz;
   // this->size_ = sz;
   // return ptr_array_ + offset;
-  size_t offset = *(ptr_offset + 1);
+  size_t offset = *((size_t*)ptr_offset + 1);
   // std::cout << "Offset: " << offset << std::endl;
-  *(ptr_offset + 1) += sz;
+  *((size_t*)ptr_offset + 1) += sz;
   this->size_ = sz;
   return static_cast<char*>(ptr_array) + offset;
 }

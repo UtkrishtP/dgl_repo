@@ -504,7 +504,9 @@ def _record_stream(x, stream):
 pre_nfeat = 0
 pre_mfg = 0
 sample_ = 0
-    
+import utils as util
+os.environ["DGL_BENCH_DEVICE"] = "gpu"
+
 def _prefetch(batch, dataloader, stream):
     # feats has the same nested structure of batch, except that
     # (1) each subgraph is replaced with a pair of node features and edge features, both
@@ -542,6 +544,7 @@ def _prefetch(batch, dataloader, stream):
             skip_mfg : '1', we skip sending the MFG to the GPU.
         '''
         start = timer()
+        # with util.Timer() as mfg_timer:
         if dataloader.skip_mfg == 1:
             batch = recursive_apply(
                 batch, lambda x: x.to("cpu", non_blocking=True)
@@ -551,6 +554,7 @@ def _prefetch(batch, dataloader, stream):
                 batch, lambda x: x.to("cuda", non_blocking=True)
             )
             batch = recursive_apply(batch, _record_stream, current_stream)
+        # dataloader.mfg_transfer += mfg_timer.elapsed_secs
     stream_event = stream.record_event() if stream is not None else None
     end = timer()
 
@@ -604,9 +608,10 @@ def _prefetcher_entry(self,
     # PyTorch will set the number of threads to 1 which slows down pin_memory() calls
     # in main process if a prefetching thread is created.
     # set_affinity({1})
-    if num_threads is not None:
-        torch.set_num_threads(num_threads)
-
+    # if num_threads is not None:
+    #     torch.set_num_threads(num_threads)
+    # print("Threads:", get_num_threads())
+    set_num_threads(dataloader.num_threads)
     try:
         while not done_event.is_set():
             try:
@@ -621,25 +626,6 @@ def _prefetcher_entry(self,
             _put_if_event_not_set(
                             queue, (batch, feats, stream_event, None), done_event
                         )
-        #     if not skip_mfg: 
-        #         _put_if_event_not_set(
-        #         queue, (batch, feats, stream_event, None), done_event
-        #     )
-        #     else:
-        #         s = time.time()
-        #         batch = recursive_apply_pair(batch, feats, _assign_for)
-        #         (a, b, c) = batch
-        #         _put_if_event_not_set(
-        #         queue, c, done_event
-        #         )
-        #         dataloader.insert_mfg.set()
-        #         e = time.time()
-        #         dataloader.index_transfer += e - s
-
-        # if skip_mfg:
-        #     # To signal sampler to start next epoch.
-        #     dataloader.samples_ready.set()
-        #     return 
         _put_if_event_not_set(queue, (None, None, None, None), done_event)
     except:  # pylint: disable=bare-except
         _put_if_event_not_set(
@@ -1062,11 +1048,12 @@ class DataLoaderCGG(torch.utils.data.DataLoader):
         sample=0,
         cgg=False,
         cgg_on_demand=False,
-        index_transfer=0,
+        mfg_transfer=0,
         gather_pin_only=False,
         dataloader=None,
         mfg_buffer=None,
         cfn=None,
+        num_threads=0,
         samples_ready=None,
         insert_mfg=None,
         **kwargs,
@@ -1128,12 +1115,13 @@ class DataLoaderCGG(torch.utils.data.DataLoader):
         self.gather_pin_only = gather_pin_only
         self.gpu_cache = gpu_cache # gpu_cache is defined but not initialized
         self.dataloader = dataloader
-        self.index_transfer = index_transfer
+        self.mfg_transfer = mfg_transfer
         num_workers = kwargs.get("num_workers", 0)
         indices_device = None
         self.samples_ready = samples_ready
         self.insert_mfg = insert_mfg
         self.mfg_buffer = mfg_buffer
+        self.num_threads = num_threads
         try:
             if isinstance(indices, Mapping):
                 indices = {
@@ -1263,7 +1251,7 @@ class DataLoaderCGG(torch.utils.data.DataLoader):
         self.pin_prefetcher = pin_prefetcher
         self.use_prefetch_thread = use_prefetch_thread
         self.cpu_affinity_enabled = False
-
+        print("Pin MFGs: ", pin_prefetcher)
         worker_init_fn = WorkerInitWrapper(kwargs.pop("worker_init_fn", None))
 
         self.other_storages = {}

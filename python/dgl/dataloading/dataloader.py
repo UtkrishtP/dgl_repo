@@ -389,6 +389,7 @@ def _prefetch_update_feats(
     gpu_caches,
     dataloader,
 ):
+    start = time.time()
     for tid, frame in enumerate(frames):
         type_ = types[tid]
         default_id = frame.get(id_name, None)
@@ -407,22 +408,23 @@ def _prefetch_update_feats(
                 if (parent_key, type_) in gpu_caches:
                     cache, item_shape = gpu_caches[parent_key, type_]
                     values, missing_index, missing_keys = cache.query(ids)
-                    # dataloader.transfer_mfg_gpu.clear()
                     missing_values = get_storage_func(parent_key, type_).fetch(
                         missing_keys, device, pin_prefetcher
-                    )                        
-                    # dataloader.transfer_mfg_gpu.set()                         
+                    )        
+                    # print("Cache", time.time())                
                     cache.replace(
                         missing_keys, F.astype(missing_values, F.float32)
                     )
                     # with open('/media/utkrisht/deepgraph/examples/pytorch/graphsage/cache_stats1.txt', 'a') as file:
                     #     file.write(f" {cache.total_miss}, {cache.total_queries}, {cache.total_miss / cache.total_queries :.3f}\n")
+                    start = time.time()
                     values = F.astype(values, F.dtype(missing_values))
                     F.scatter_row_inplace(values, missing_index, missing_values)
                     # Reshape the flattened result to match the original shape.
                     F.reshape(values, (values.shape[0],) + item_shape)
                     values.__cache_miss__ = missing_keys.shape[0] / ids.shape[0]
                     feats[tid, key] = values
+                    dataloader.scatter += time.time() - start
                 else:
                     '''
                         If cgg is false, we are fetching graph features as per the mode set by the user,
@@ -510,7 +512,9 @@ def _record_stream(x, stream):
 pre_nfeat = 0
 pre_mfg = 0
 sample_ = 0
-    
+import utils as util
+os.environ["DGL_BENCH_DEVICE"] = "gpu"
+
 def _prefetch(batch, dataloader, stream):
     # feats has the same nested structure of batch, except that
     # (1) each subgraph is replaced with a pair of node features and edge features, both
@@ -534,12 +538,25 @@ def _prefetch(batch, dataloader, stream):
     start_ = end_ = start = end = 0
     with torch.cuda.stream(stream):
         # fetch node/edge features
-        start_ = timer()
-        feats = recursive_apply(batch, _prefetch_for, dataloader)
-        if dataloader.gather_pin_only == False:
-            feats = recursive_apply(feats, _await_or_return)
-            feats = recursive_apply(feats, _record_stream, current_stream)
-        end_ = timer()
+        if dataloader.extract_nfeats is not None:
+            dataloader.extract_nfeats.clear()
+        s = time.time()
+        if dataloader.profiler:
+            with util.Timer() as nfeat_time:
+                feats = recursive_apply(batch, _prefetch_for, dataloader)
+                if dataloader.gather_pin_only == False:
+                    feats = recursive_apply(feats, _await_or_return)
+                    feats = recursive_apply(feats, _record_stream, current_stream)
+            dataloader.nfeat_timer += nfeat_time.elapsed_secs
+        else:
+            feats = recursive_apply(batch, _prefetch_for, dataloader)
+            if dataloader.gather_pin_only == False:
+                feats = recursive_apply(feats, _await_or_return)
+                feats = recursive_apply(feats, _record_stream, current_stream)
+                
+        if dataloader.extract_nfeats is not None:
+            dataloader.extract_nfeats.set()
+        # dataloader.nfeat_timer += time.time() - s
         # transfer input nodes/seed nodes/subgraphs
 
         '''
@@ -551,16 +568,30 @@ def _prefetch(batch, dataloader, stream):
         # batch = recursive_apply(
         #         batch, lambda x: x.to("cuda", non_blocking=True)
             # )
-        if dataloader.skip_mfg == 1 or dataloader.device == torch.device("cpu"):
-            # batch = recursive_apply(
-            #     batch, lambda x: x.to("cpu", non_blocking=True)
-            # )
-            return batch, feats, None
+        if dataloader.profiler:
+            with util.Timer() as mfg_time:
+                if dataloader.skip_mfg == 1 or dataloader.device == torch.device("cpu"):
+                    # batch = recursive_apply(
+                    #     batch, lambda x: x.to("cpu", non_blocking=True)
+                    # )
+                    return batch, feats, None
+                else:
+                    batch = recursive_apply(
+                        batch, lambda x: x.to("cuda", non_blocking=True)
+                    )
+                    batch = recursive_apply(batch, _record_stream, current_stream)
+            dataloader.mfg_transfer += mfg_time.elapsed_secs
         else:
-            batch = recursive_apply(
-                batch, lambda x: x.to("cuda", non_blocking=True)
-            )
-            batch = recursive_apply(batch, _record_stream, current_stream)
+            if dataloader.skip_mfg == 1 or dataloader.device == torch.device("cpu"):
+                    # batch = recursive_apply(
+                    #     batch, lambda x: x.to("cpu", non_blocking=True)
+                    # )
+                    return batch, feats, None
+            else:
+                batch = recursive_apply(
+                    batch, lambda x: x.to("cuda", non_blocking=True)
+                )
+                batch = recursive_apply(batch, _record_stream, current_stream)
     stream_event = stream.record_event() if stream is not None else None
     end = timer()
 
@@ -789,21 +820,16 @@ class _PrefetchingIter(object):
         return batch, feats, stream_event
 
     def __next__(self):
+        start = time.time()
         batch, feats, stream_event = (
             self._next_non_threaded()
             if not self.use_thread
             else self._next_threaded()
         )
-        s = time.time()
         batch = recursive_apply_pair(batch, feats, _assign_for)
-        self.dataloader.index_transfer += time.time() - s
         if stream_event is not None:
             stream_event.wait()
-        # global pre_nfeat, pre_mfg, sample_
-        # #Update the prefetch time taken for nfeats/mfg.
-        # self.dataloader.pre_nfeat = pre_nfeat
-        # self.dataloader.pre_mfg = pre_mfg
-
+        self.dataloader.index_transfer += time.time() - start
         # # Update the sampling time
         # self.dataloader.sample = sample_
         # # Fetch the global variable using the getter function in pytorch_tensor.py
@@ -1069,12 +1095,14 @@ class DataLoader(torch.utils.data.DataLoader):
         cfn=None,
         samples_ready=None,
         insert_mfg=None,
-        transfer_mfg_gpu=None,
+        extract_nfeats=None,
         wait_time=0,
         mfg_transfer=0,
         ids_transfer=0,
         mini_batch=0,
         queue_size=0,
+        nfeat_timer=0,
+        profiler=False,
         head=0,
         tail=0,
         **kwargs,
@@ -1143,7 +1171,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self.insert_mfg = insert_mfg
         self.nfeat_shapes = nfeat_shapes
         self.label_shapes = label_shapes
-        self.transfer_mfg_gpu = transfer_mfg_gpu
+        self.extract_nfeats = extract_nfeats
         self.wait_time = wait_time
         self.mfg_transfer = mfg_transfer
         self.ids_transfer = ids_transfer
@@ -1151,6 +1179,8 @@ class DataLoader(torch.utils.data.DataLoader):
         self.queue_size = queue_size
         self.head = head
         self.tail = tail
+        self.nfeat_timer = nfeat_timer
+        self.profiler = profiler  
         try:
             if isinstance(indices, Mapping):
                 indices = {
@@ -1330,9 +1360,7 @@ class DataLoader(torch.utils.data.DataLoader):
             gpu_caches = self.graph._gpu_caches["node" if node_or_edge == "_N" else "edge"]
             cache, item_shape = gpu_caches[type, node_or_edge]
             values, missing_index, missing_keys = cache.query(ids)
-            # self.transfer_mfg_gpu.clear()
             missing_values = self.graph.get_node_storage(type, node_or_edge).fetch(missing_keys, self.device)
-            # self.transfer_mfg_gpu.set()                                 
             cache.replace(
                 missing_keys, F.astype(missing_values, F.float32)
             )

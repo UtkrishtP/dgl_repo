@@ -7,6 +7,7 @@ from .graphsaint import *
 from .labor_sampler import *
 from .neighbor_sampler import *
 from .shadow import *
+from .dataloader_cgg import *
 
 if F.get_preferred_backend() == "pytorch":
     from .spot_target import *

@@ -15,4 +15,7 @@ def reset_shm(offset):
 def print_offset(offset):
   return _CAPI_DGLPrintOffset(offset)
 
+def read_offset(name):
+  return _CAPI_DGLReadOffset(name)
+
 _init_api("dgl.createshm", __name__)

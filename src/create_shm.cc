@@ -41,19 +41,16 @@ DGL_REGISTER_GLOBAL("createshm._CAPI_DGLGetShmPtr")
 .set_body([] (DGLArgs args, DGLRetValue* rv) {
     std::string name = args[0];
     size_t size = args[1];
-    int offset_or_blocks = args[2];
+    int offset_or_blocks = args[2]; // TODO: Giving a meaningful name to the variable.
     void *ptr_;
-    if (offset_or_blocks == 0) {
+    if (!offset_or_blocks) {
       int flag = O_RDWR;
       auto fd_ = shm_open(name.c_str(), flag, S_IRUSR | S_IWUSR);
-      auto ret = ftruncate(fd_, size);
       ptr_ = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
     } else {
       int flag = O_RDWR;
       auto fd_ = shm_open(name.c_str(), flag, S_IRUSR | S_IWUSR);
-      auto ret = ftruncate(fd_, sizeof(size_t) * 2);
       ptr_ = mmap(NULL, sizeof(size_t) * 2, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
-      *((size_t*)ptr_ + 1) = offset_or_blocks;
     }
     *rv = ptr_;
   });
@@ -70,4 +67,10 @@ DGL_REGISTER_GLOBAL("createshm._CAPI_DGLPrintOffset")
     void* ptr_ = args[0];
     std::cout << "offset: " << *((size_t*)ptr_ + 1) << std::endl;
     *rv = ptr_;
+  });
+
+DGL_REGISTER_GLOBAL("createshm._CAPI_DGLReadOffset")
+.set_body([] (DGLArgs args, DGLRetValue* rv) {
+    void* ptr_ = args[0];
+    *rv = static_cast<int64_t>(*((size_t*)ptr_ + 1));
   });

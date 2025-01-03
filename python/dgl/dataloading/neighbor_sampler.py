@@ -151,7 +151,7 @@ class NeighborSampler(BlockSampler):
         self.g = None
         self.array = array
         self.offset = offset
-
+        self.hybrid = hybrid
     
     def set_hybrid(self, hybrid):
         self.hybrid = hybrid

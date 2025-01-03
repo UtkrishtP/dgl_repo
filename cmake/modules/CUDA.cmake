@@ -242,7 +242,7 @@ macro(dgl_config_cuda out_variable)
     string(CONCAT CXX_HOST_FLAGS ${CXX_HOST_FLAGS} ",/MD")
   endif()
   list(APPEND CUDA_NVCC_FLAGS "-Xcompiler" "${CXX_HOST_FLAGS}")
-
+  # list(APPEND CUDA_NVCC_FLAGS "-G")
   # 1. Add arch flags
   dgl_select_nvcc_arch_flags(NVCC_FLAGS_ARCH)
   list(APPEND CUDA_NVCC_FLAGS ${NVCC_FLAGS_ARCH})

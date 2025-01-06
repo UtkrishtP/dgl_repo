@@ -24,6 +24,7 @@ def get_args():
     )
     parser.add_argument("--cgg", type=bool, default=True, choices=[True, False])
     parser.add_argument("--pin_prefetcher", type=bool, default=True, choices=[True, False])
+    parser.add_argument("--setup_threads", type=bool, default=False, choices=[True, False])
     parser.add_argument(
         "--variant",
         type=str,
@@ -34,7 +35,7 @@ def get_args():
         "--sampler",
         type=str,
         default='nbr',
-        choices=['nbr', 'lbr', 'lbr2'],
+        choices=['fns', 'nbr', 'lbr', 'lbr2', 'ladies', 'shadowkhop'],
     )
     parser.add_argument(
         "--epoch",
@@ -68,6 +69,11 @@ def get_args():
     )
     parser.add_argument(
         "--workers",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--presc_workers",
         type=int,
         default=0,
     )

@@ -842,13 +842,11 @@ class CollateWrapper(object):
     """Wraps a collate function with :func:`remove_parent_storage_columns` for serializing
     from PyTorch DataLoader workers.
     """
-
     def __init__(self, sample_func, g, use_uva, device):
         self.sample_func = sample_func
         self.g = g
         self.use_uva = use_uva
         self.device = device
-        self.timer = 0
 
     def __call__(self, items):
         graph_device = getattr(self.g, "device", None)
@@ -857,13 +855,39 @@ class CollateWrapper(object):
             # is not on CPU.
             items = recursive_apply(items, lambda x: x.to(self.device))
         
-        # Timer hooks added to measure sampling time, works only for [workers = 0] scenario
-        start = timer()
         batch = self.sample_func(self.g, items)
-        end = timer()
-        self.timer = self.timer + end - start
         return recursive_apply(batch, remove_parent_storage_columns, self.g)
 
+import sys
+sys.path.append('/media/utkrisht/deepgraph')
+from examples.pytorch.graphsage.hybrid_101.fetch_g import fetch_all
+
+class CollateWrapperHybrid(object):
+    '''
+        PlaceHolder for CollateWrapper for our Hybrid solution.
+        We are launching processes as 'spawn', and when using sampling with multiple
+        dataloaders, torch is unable to pickle the 'DGLGraph' object. Hence, we need to
+        avoid passing the graph object.
+
+        Instead in the call() function, we will fetch the graph object from the shared memory
+        thus avoiding any pickling issues.
+    '''
+    def __init__(self, sample_func, g, use_uva, device):
+        self.sample_func = sample_func
+        self.g = None
+        self.use_uva = use_uva
+        self.device = device
+
+    def __call__(self, items):
+        g = fetch_all()
+        graph_device = getattr(g, "device", None)
+        if self.use_uva or (graph_device != torch.device("cpu")):
+            # Only copy the indices to the given device if in UVA mode or the graph
+            # is not on CPU.
+            items = recursive_apply(items, lambda x: x.to(self.device))
+        
+        batch = self.sample_func(g, items)
+        return recursive_apply(batch, remove_parent_storage_columns, g)
 
 class WorkerInitWrapper(object):
     """Wraps the :attr:`worker_init_fn` argument of the DataLoader to set the number of DGL
@@ -1092,7 +1116,6 @@ class DataLoader(torch.utils.data.DataLoader):
         dataloader=None,
         nfeat_shapes=None,
         label_shapes=None,
-        cfn=None,
         samples_ready=None,
         insert_mfg=None,
         extract_nfeats=None,
@@ -1105,6 +1128,9 @@ class DataLoader(torch.utils.data.DataLoader):
         profiler=False,
         head=0,
         tail=0,
+        cpu_shared_queue=None,
+        hybrid=False,
+        hybrid_wrapper=False,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1180,7 +1206,10 @@ class DataLoader(torch.utils.data.DataLoader):
         self.head = head
         self.tail = tail
         self.nfeat_timer = nfeat_timer
-        self.profiler = profiler  
+        self.profiler = profiler
+        self.cpu_shared_queue = cpu_shared_queue
+        self.hybrid = hybrid
+        self.hybrid_wrapper = hybrid_wrapper
         try:
             if isinstance(indices, Mapping):
                 indices = {
@@ -1320,16 +1349,18 @@ class DataLoader(torch.utils.data.DataLoader):
         if not hasattr(dataloader, 'gpu_cache'):
             _init_gpu_caches(self.graph, gpu_cache) 
 
-        self.cfn = CollateWrapper(
-                self.graph_sampler.sample, graph, self.use_uva, self.device
-            )
-       
         super().__init__(
             self.dataset,
-            collate_fn = self.cfn,
+            collate_fn=CollateWrapper(
+                self.graph_sampler.sample, graph, self.use_uva, self.device
+            ) if self.hybrid_wrapper == False else CollateWrapperHybrid(
+                self.graph_sampler.sample, graph, self.use_uva, self.device
+            ),
             batch_size=None,
             pin_memory=self.pin_prefetcher,
             worker_init_fn=worker_init_fn,
+            dgl_queue=self.cpu_shared_queue,
+            hybrid=hybrid,
             **kwargs,
         )
 
@@ -1413,15 +1444,10 @@ class DataLoader(torch.utils.data.DataLoader):
             self, super().__iter__(), num_threads=num_threads
         )
 
-    def _begin_sampling(self,):
+    def iterate(self):
         if self.shuffle:
             self.dataset.shuffle()
-        
-        num_threads = torch.get_num_threads() if self.num_workers > 0 else None
-
-        return _PrefetchingIter(
-            self, super().__iter__(), num_threads=num_threads
-        )
+        return super().__iter__()
     
     @contextmanager
     def enable_cpu_affinity(

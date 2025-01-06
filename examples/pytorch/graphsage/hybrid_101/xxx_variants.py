@@ -324,7 +324,7 @@ def train_cgg(file, args, model, num_classes):
 
     model.to(torch.device("cuda"))
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
-    file1 = open("../results/cgg_threads.txt", "a")
+    file1 = open("../results/tmp.txt", "a")
     file1.write(timestamp + "," + args.dataset + "," + str(args.batch_size) + "," + str(args.sampler) + "," + str(args.cache_size) + "," + str(args.workers) + ","
                 + str(args.num_threads) + ",")
     start_ = time.time()

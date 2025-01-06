@@ -34,6 +34,7 @@ from datetime import datetime
 import math
 from tabulate import tabulate
 from mps_utils import *
+from torch.utils.data._utils.worker import _IterableDatasetStopIteration
 import utils as util
 os.environ["DGL_BENCH_DEVICE"] = "gpu"
 # @util.benchmark("time")
@@ -41,7 +42,7 @@ os.environ["DGL_BENCH_DEVICE"] = "gpu"
 # from benchmarks.benchmarks import utils
 SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 64
 SHARED_MEM_GPU_METAINFO_SIZE_MAX = (1024 * 48) + (3 * 64)
-
+MIN_VALUE_LONG = -(2 ** (ctypes.sizeof(ctypes.c_long) * 8 - 1))
 class SAGE(nn.Module):
     def __init__(self, in_size, hid_size, out_size, num_layers):
         super().__init__()

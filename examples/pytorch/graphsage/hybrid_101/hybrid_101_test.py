@@ -87,13 +87,13 @@ def clear_shared_memory():
 def main():
     args = get_args()
     # datasets = ["ogbn-products"]
-    # datasets = ["friendster" , "ogbn-papers100M", "twitter", "igb-large"] 
+    datasets = ["friendster" , "ogbn-papers100M", "twitter", "igb-large"] 
     # datasets = ["igb-large"]
-    datasets = ["ogbn-papers100M"]
-    batch_sizes = [1024]
+    # datasets = ["ogbn-papers100M"]
+    batch_sizes = [8192, 1024]
     hid_size = args.hid_size
     # batch_sizes = [8192,]
-    file_name_ = ["hybrid_104.py"]
+    file_name_ = ["hybrid_lbr.py"]
     # file_name_ = ["hybrid_104.py", "xxx_variants.py"]
     # threads_ = [1, 4, 16, 64]
     threads_ = [64]
@@ -101,7 +101,7 @@ def main():
     diff = [1]
     variants = ["cgg"] #"ggg", "gg_using_cgg"]
     cache_size = 12000000
-    fanout_ = ["25,10,5", "15,10,5"]
+    fanout_ = ["15,10,5"]
 
     for _dataset in datasets:
         clear_shared_memory()

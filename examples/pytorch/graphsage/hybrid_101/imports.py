@@ -14,6 +14,7 @@ from dgl.dataloading import (
     NeighborSampler,
     LaborSampler,
     SAINTSampler,
+    ShaDowKHopSampler,
 )
 from ogb.nodeproppred import DglNodePropPredDataset
 import time, psutil
@@ -34,9 +35,14 @@ from datetime import datetime
 import math
 from tabulate import tabulate
 from mps_utils import *
-from torch.utils.data._utils.worker import _IterableDatasetStopIteration
+import torchvision.models as models
+from torch.profiler import profile, record_function, ProfilerActivity
+# from torch.utils.data._utils.worker import _IterableDatasetStopIteration
 import utils as util
+import cProfile, pstats, io
+from pstats import SortKey
 os.environ["DGL_BENCH_DEVICE"] = "gpu"
+# torch.multiprocessing.set_sharing_strategy('file_system')
 # @util.benchmark("time")
 # sys.path.append("/media/utkrisht/deepgraph/")
 # from benchmarks.benchmarks import utils
@@ -44,27 +50,46 @@ SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 64
 SHARED_MEM_GPU_METAINFO_SIZE_MAX = (1024 * 48) + (3 * 64)
 MIN_VALUE_LONG = -(2 ** (ctypes.sizeof(ctypes.c_long) * 8 - 1))
 class SAGE(nn.Module):
-    def __init__(self, in_size, hid_size, out_size, num_layers):
+    def __init__(self, in_size, hid_size, out_size, num_layers=3, model_name='sage'):
         super().__init__()
         self.layers = nn.ModuleList()
-        # three-layer GraphSAGE-mean
-        self.layers.append(dglnn.SAGEConv(in_size, hid_size, "mean"))
-        for _ in range(num_layers-2):
-            self.layers.append(dglnn.SAGEConv(hid_size, hid_size, aggregator_type='mean'))
-        self.layers.append(dglnn.SAGEConv(hid_size, out_size, "mean"))
+
+        # GraphSAGE-mean
+        if model_name.lower() == 'sage':
+            self.layers.append(dglnn.SAGEConv(in_size, hid_size, "mean"))
+            for i in range(num_layers - 2):
+                self.layers.append(dglnn.SAGEConv(hid_size, hid_size, "mean"))
+            self.layers.append(dglnn.SAGEConv(hid_size, out_size, "mean"))
+        # GCN
+        elif model_name.lower() == 'gcn':
+            kwargs = {'allow_zero_in_degree': True} 
+            self.layers.append(dglnn.GraphConv(in_size, hid_size, **kwargs))
+            for i in range(num_layers - 2):
+                self.layers.append(dglnn.GraphConv(hid_size, hid_size, **kwargs))
+            self.layers.append(dglnn.GraphConv(hid_size, out_size, **kwargs))
+        else:
+            raise NotImplementedError
+
         self.dropout = nn.Dropout(0.5)
         self.hid_size = hid_size
         self.out_size = out_size
 
     def forward(self, blocks, x):
         h = x
-        for l, (layer, block) in enumerate(zip(self.layers, blocks)):
-            h = layer(block, h)
-            if l != len(self.layers) - 1:
-                h = F.relu(h)
-                h = self.dropout(h)
+        if hasattr(blocks, '__len__'):
+            for l, (layer, block) in enumerate(zip(self.layers, blocks)):
+                h = layer(block, h)
+                if l != len(self.layers) - 1:
+                    h = F.relu(h)
+                    h = self.dropout(h)
+        else:
+            for l, layer in enumerate(self.layers):
+                h = layer(blocks, h)
+                if l != len(self.layers) - 1:
+                    h = F.relu(h)
+                    h = self.dropout(h)
         return h
-
+    
     def inference(self, g, device, batch_size):
         """Conduct layer-wise inference to get all the node embeddings."""
         feat = g.ndata["feat"]
@@ -108,8 +133,12 @@ def evaluate(model, graph, dataloader, num_classes):
     y_hats = []
     for it, (input_nodes, output_nodes, blocks) in enumerate(dataloader):
         with torch.no_grad():
-            x = blocks[0].srcdata["feat"]
-            ys.append(blocks[-1].dstdata["label"])
+            if hasattr(blocks, "__len__"):
+                x = blocks[0].srcdata["feat"]
+                ys.append(blocks[-1].dstdata["label"])
+            else:
+                x = blocks.srcdata["feat"]
+                ys.append(blocks.dstdata["label"])
             y_hats.append(model(blocks, x))
     return MF.accuracy(
         torch.cat(y_hats),

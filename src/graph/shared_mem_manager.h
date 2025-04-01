@@ -26,7 +26,7 @@ using dgl::runtime::SharedMemory;
 // const size_t SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 32;
 // TODO: Can we make this dynamic as per number of layers?
 const size_t SHARED_MEM_METAINFO_SIZE_MAX = 1024 * 64;
-const size_t SHARED_MEM_GPU_METAINFO_SIZE_MAX = 1024 * 48 + (3 * sizeof(cudaIpcMemHandle_t));
+const size_t SHARED_MEM_GPU_METAINFO_SIZE_MAX = 1024 * 64 + (4 * sizeof(cudaIpcMemHandle_t));
 
 // Utility class to copy objects to shared memory and record metadatas
 class SharedMemManager : public dmlc::Stream {

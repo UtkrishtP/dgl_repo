@@ -294,7 +294,8 @@ class HeteroGraph : public BaseHeteroGraph {
       const std::vector<std::string>& etypes,
       const std::set<std::string>& fmts,
       const std::vector<IdArray>& nodes,
-      const int layer);
+      const int layer,
+      const int idx);
 
   /**
    * @brief Create a heterograph from
@@ -315,7 +316,7 @@ static std::tuple<
    * @return the HeteroGraphPtr in GPU, names of node types, names of edge types
    */
   static std::tuple<
-      HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>, std::vector<IdArray>>
+      HeteroGraphPtr, std::vector<std::string>, std::vector<std::string>, std::vector<IdArray>, int>
   CreateFromGPUSharedMem(int layer);
 
   /** @brief Creat a LineGraph of self */

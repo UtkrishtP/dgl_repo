@@ -618,7 +618,10 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCopyToGPUSharedMem")
       List<Value> ntypes = args[5];
       List<Value> etypes = args[6];
       List<Value> fmts = args[7];
+      auto idx = args[8];
+      // const IdArray node_labels_ = args[8];
       const std::vector<IdArray> nodes = {nodes_};
+      // const std::vector<IdArray> node_labels = {node_labels_};
       auto ntypes_vec = ListValueToVector<std::string>(ntypes);
       auto etypes_vec = ListValueToVector<std::string>(etypes);
       std::set<std::string> fmts_set;
@@ -629,7 +632,7 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCopyToGPUSharedMem")
       HeteroGraphPtr hg_share;
       std::vector<IdArray> induced_nodes;
       std::tie(hg_share, induced_nodes) = HeteroGraph::CopyToGPUSharedMem(
-          hg.sptr(), "", ntypes_vec, etypes_vec, fmts_set, nodes, layer);
+          hg.sptr(), "", ntypes_vec, etypes_vec, fmts_set, nodes, layer, idx);
       List<ObjectRef> ret;
       List<Value> lhs_nodes_ref;
       for (IdArray& array : induced_nodes)
@@ -650,7 +653,8 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCreateFromGPUSharedMem")
       std::vector<std::string> ntypes;
       std::vector<std::string> etypes;
       std::vector<IdArray> induced_vertices;
-      std::tie(hg, ntypes, etypes, induced_vertices) = HeteroGraph::CreateFromGPUSharedMem(layer);
+      int idx;
+      std::tie(hg, ntypes, etypes, induced_vertices, idx) = HeteroGraph::CreateFromGPUSharedMem(layer);
       List<Value> ntypes_list;
       List<Value> etypes_list;
       List<Value> lhs_nodes_ref;
@@ -665,6 +669,7 @@ DGL_REGISTER_GLOBAL("heterograph_index._CAPI_DGLHeteroCreateFromGPUSharedMem")
       ret.push_back(ntypes_list);
       ret.push_back(etypes_list);
       ret.push_back(lhs_nodes_ref);
+      ret.push_back(Value(MakeValue(idx)));
       *rv = ret;
     });
 

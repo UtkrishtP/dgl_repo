@@ -184,7 +184,7 @@ def graph(
 
     return g.to(device)
 
-def hetero_from_gpu_shared_memory(name, offset, layer):
+def hetero_from_gpu_shared_memory(name, offset, layer, sampler="fns"):
     """Create a heterograph using shared memory in GPU.
     Store the IPC handle and metadata in shared memory in CPU. (/dev/shm)
 
@@ -197,10 +197,12 @@ def hetero_from_gpu_shared_memory(name, offset, layer):
     -------
     HeteroGraph (in shared memory)
     """
-    g, ntypes, etypes, vertices = heterograph_index.create_heterograph_from_gpu_shared_memory(
+    g, ntypes, etypes, vertices, idx = heterograph_index.create_heterograph_from_gpu_shared_memory(
         name, offset, layer
     )
     src_node_ids = [F.from_dgl_nd(src) for src in vertices]
+    if sampler == "shadow":
+        return DGLGraph(g, ntypes, etypes), src_node_ids, idx
     return DGLBlock(g, ntypes, etypes), src_node_ids
 
 def hetero_from_shared_memory(name):

@@ -211,4 +211,17 @@ bool SharedMemManager::CreateFromGPUSharedMemHybrid<COOMatrix>(
   return true;
 }
 
+template <>
+bool SharedMemManager::CreateFromGPUSharedMemHybrid<CSRMatrix>(
+    CSRMatrix *csr, std::string name) {
+  CreateFromGPUSharedMemHybrid(&csr->indptr, name + "_col");
+  CreateFromGPUSharedMemHybrid(&csr->indices, name + "_row");
+  CreateFromGPUSharedMemHybrid(&csr->data, name + "_data");
+  // csr->data = NDArray::Empty({0}, csr->indptr->dtype, csr->indptr->ctx);
+  strm_->Read(&csr->num_rows);
+  strm_->Read(&csr->num_cols);
+  strm_->Read(&csr->sorted);
+  return true;
+}
+
 }  // namespace dgl

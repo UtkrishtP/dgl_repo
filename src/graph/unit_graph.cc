@@ -1303,17 +1303,19 @@ HeteroGraphPtr UnitGraph::CopyTo(HeteroGraphPtr g, const DGLContext& ctx) {
     auto bg = std::dynamic_pointer_cast<UnitGraph>(g);
     CHECK_NOTNULL(bg);
     /*
-      We have disabled the CSR/CSC format copy to GPU for now.
-      Bootstrapping GNN training on GPU only requires COO format.
+      We have disabled the CSC format copy to GPU for now.
+      Bootstrapping GNN training on GPU for Neighbor/Labor only requires COO format.
+      Modified this as Shadow sampler uses CSR format.
+      in_csr : CSC format
     */
     // CSRPtr new_incsr = (bg->in_csr_->defined())
     //                        ? CSRPtr(new CSR(bg->in_csr_->CopyTo(ctx)))
     //                        : nullptr;
-    // CSRPtr new_outcsr = (bg->out_csr_->defined())
-    //                         ? CSRPtr(new CSR(bg->out_csr_->CopyTo(ctx)))
-    //                         : nullptr;
+    CSRPtr new_outcsr = (bg->out_csr_->defined())
+                            ? CSRPtr(new CSR(bg->out_csr_->CopyTo(ctx)))
+                            : nullptr;
     CSRPtr new_incsr = nullptr;
-    CSRPtr new_outcsr = nullptr;
+    // CSRPtr new_outcsr = nullptr;
     COOPtr new_coo = (bg->coo_->defined())
                          ? COOPtr(new COO(bg->coo_->CopyTo(ctx)))
                          : nullptr;

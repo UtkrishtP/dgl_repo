@@ -5719,6 +5719,7 @@ class DGLGraph(object):
         import sys
         new_nframes = []
         for nframe in self._node_frames:
+            # print(nframe)
             new_nframes.append(nframe.to(device, **kwargs))
         ret._node_frames = new_nframes
         # print(new_nframes)
@@ -6284,7 +6285,8 @@ class DGLGraph(object):
         )
         return DGLGraph(gidx, self.ntypes, self.etypes)
     
-    def shared_memory_gpu(self, name, offset, nfeat_or_label, layer, formats=("coo", "csr", "csc")):
+    def shared_memory_gpu(self, name, offset, nfeat_or_label, layer, formats=("coo", "csr", "csc"),
+                        idx=-1,):
         """Return a copy of this graph in shared memory in GPU, without node data or edge data.
 
         It moves the graph index to shared memory and returns a DGLGraph object which
@@ -6312,13 +6314,15 @@ class DGLGraph(object):
                 "csr",
                 "csc",
             ), "{} is not coo, csr or csc".format(fmt)
-        formats = ["coo"]
+        formats = ["coo"] if self.is_block else ["csr"]
         gidx, nodes = self._graph.shared_memory_gpu(
-            name, offset, nfeat_or_label, layer, self.ntypes, self.etypes, formats
+            name, offset, nfeat_or_label, layer, self.ntypes, self.etypes, formats, idx
         )
         # import time
         # time.sleep(5)
-        # return DGLGraph(gidx, self.ntypes, self.etypes)
+        # if not self.is_block:
+        #     print("blocks shared")
+        #     return DGLGraph(gidx, self.ntypes, self.etypes)
         return (gidx, nodes) #, self.ntypes, self.etypes)
 
     def long(self):

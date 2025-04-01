@@ -424,7 +424,7 @@ def _prefetch_update_feats(
                     F.reshape(values, (values.shape[0],) + item_shape)
                     values.__cache_miss__ = missing_keys.shape[0] / ids.shape[0]
                     feats[tid, key] = values
-                    dataloader.scatter += time.time() - start
+                    # dataloader.scatter += time.time() - start
                 else:
                     '''
                         If cgg is false, we are fetching graph features as per the mode set by the user,
@@ -1131,6 +1131,7 @@ class DataLoader(torch.utils.data.DataLoader):
         cpu_shared_queue=None,
         hybrid=False,
         hybrid_wrapper=False,
+        prefetch_factor=2,
         **kwargs,
     ):
         # (BarclayII) PyTorch Lightning sometimes will recreate a DataLoader from an existing
@@ -1210,6 +1211,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self.cpu_shared_queue = cpu_shared_queue
         self.hybrid = hybrid
         self.hybrid_wrapper = hybrid_wrapper
+        self.prefetch_factor = prefetch_factor
         try:
             if isinstance(indices, Mapping):
                 indices = {
@@ -1282,7 +1284,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 if use_prefetch_thread is None:
                     use_prefetch_thread = True
             else:
-                if pin_prefetcher is True and not self.cgg and not self.cgg_on_demand:
+                if pin_prefetcher is True and not self.cgg and not self.cgg_on_demand and not self.hybrid:
                     raise ValueError(
                         "pin_prefetcher=True is only effective when device=cuda and "
                         "sampling is performed on CPU."
@@ -1361,6 +1363,7 @@ class DataLoader(torch.utils.data.DataLoader):
             worker_init_fn=worker_init_fn,
             dgl_queue=self.cpu_shared_queue,
             hybrid=hybrid,
+            prefetch_factor=self.prefetch_factor if num_workers > 0 else None,
             **kwargs,
         )
 

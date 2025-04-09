@@ -23,6 +23,8 @@ def get_args():
         help="data type(float, bfloat16)",
     )
     parser.add_argument("--cgg", type=bool, default=True, choices=[True, False])
+    parser.add_argument("--slack_test", type=int, default=0,)
+    parser.add_argument("--opt", type=int, default=1, )
     parser.add_argument("--pin_prefetcher", type=bool, default=True, choices=[True, False])
     parser.add_argument("--setup_threads", type=bool, default=False, choices=[True, False])
     parser.add_argument(
@@ -34,13 +36,18 @@ def get_args():
     parser.add_argument(
         "--sampler",
         type=str,
-        default='nbr',
-        choices=['fns', 'nbr', 'lbr', 'lbr2', 'ladies', 'shadowkhop'],
+        default='fns',
+        # choices=['fns', 'nbr', 'lbr', 'lbr2', 'ladies', 'shadow'],
     )
     parser.add_argument(
         "--epoch",
         type=int,
         default=5,
+    )
+    parser.add_argument(
+        "--diff",
+        type=int,
+        default=0,
     )
     parser.add_argument(
         "--pin_mfg",
@@ -85,7 +92,7 @@ def get_args():
     parser.add_argument(
         "--cache_size",
         type=int,
-        default=10000000,
+        default=12000000,
     )
 
     parser.add_argument(
@@ -124,6 +131,21 @@ def get_args():
         default="ogbn-arxiv",
     )
     parser.add_argument(
+        "--profiler",
+        type=int,
+        # default="ogbn-arxiv",
+    )
+    parser.add_argument(
+        "--ncu",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
+        "--nsys",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
         "--dataset_size",
         type=str,
         default="medium",
@@ -155,15 +177,21 @@ def get_args():
     parser.add_argument(
         "--nfeat_dim",
         type=int,
-        default=380,
+        default=128,
     )
 
-    parser.add_argument(
-        "--diff",
-        type=int,
-        default=256,
-    )
+    # parser.add_argument(
+    #     "--diff",
+    #     type=int,
+    #     default=256,
+    # )
     
+    parser.add_argument(
+        "--mfg_buffer_size",
+        type=int,
+        default=0,
+    )
+
     parser.add_argument(
         "--num_threads",
         type=int,
@@ -196,9 +224,14 @@ def get_args():
         "--t_ggg",
         type=float,
     )
+
+    parser.add_argument(
+        "--t_cpu_deque",
+        type=float,
+    )
     # Model
     parser.add_argument(
-        "--model_type", type=str, default="sage", choices=["gat", "sage", "gcn"]
+        "--model_type", type=str, default="sage", 
     )
     parser.add_argument("--modelpath", type=str, default="deletethis.pt")
     parser.add_argument("--model_save", type=int, default=0)
@@ -230,6 +263,12 @@ def get_args():
         "--enable_affinity",
         type=int,
         default=0,
+    )
+
+    parser.add_argument(
+        "--prefetch_factor",
+        type=int,
+        default=2,
     )
     parser.add_argument("--hidden_channels", type=int, default=128)
     parser.add_argument("--learning_rate", type=int, default=0.01)

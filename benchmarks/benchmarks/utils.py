@@ -466,7 +466,7 @@ class TestFilter:
         else:
             import logging
 
-            logging.warning("No regression test conf file specified")
+            # logging.warning("No regression test conf file specified")
 
     def check(self, func):
         funcfullname = inspect.getmodule(func).__name__ + "." + func.__name__

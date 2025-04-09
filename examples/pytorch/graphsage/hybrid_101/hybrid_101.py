@@ -18,7 +18,13 @@ from ogb.nodeproppred import DglNodePropPredDataset
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dgl.utils.internal import recursive_apply
-from dgl.createshm import create_shmarray, create_shmoffset, reset_shm, get_shm_ptr, print_offset
+from dgl.createshm import (
+    create_shmarray,
+    create_shmoffset,
+    reset_shm,
+    get_shm_ptr,
+    print_offset,
+)
 import ctypes
 from dgl.utils.shared_mem import create_shared_mem_array, get_shared_mem_array
 from dgl.convert import hetero_from_shared_memory
@@ -26,6 +32,7 @@ from dgl.utils.pin_memory import pin_memory_inplace
 from custom_dl import FriendsterDataset, TwitterDataset, IGB260MDGLDataset
 from args import get_args
 from load_dataset import fetch_train_graph, fetch_all, fetch_shapes
+
 
 class SAGE(nn.Module):
     def __init__(self, in_size, hid_size, out_size):
@@ -115,7 +122,9 @@ def layerwise_infer(device, graph, nid, model, num_classes, batch_size):
             pred, label, task="multiclass", num_classes=num_classes
         )
 
+
 import subprocess, os
+
 
 def start_perf(batch, pid, e):
     # Command to start perf record
@@ -125,22 +134,38 @@ def start_perf(batch, pid, e):
     # print(command)
     subprocess.call(command, shell=True)
 
+
 def stop_perf():
     # Stop perf record by killing the process
-    with open('./perf.pid', 'r') as file:
+    with open("./perf.pid", "r") as file:
         pid = file.read().strip()
     # os.kill(int(pid), signal.SIGINT)  # SIGKILL
     command = f"sudo kill -2 {pid}"
     subprocess.call(command, shell=True)
     # subprocess.call("perf report -i /tmp/perf.data", shell=True)  # Generate and view the report
+
+
 import signal
 
-def test_spawn(blocks, ):
+
+def test_spawn(
+    blocks,
+):
     print("Hello")
     for block in blocks:
-        print(block[0].srcdata['_ID'])
+        print(block[0].srcdata["_ID"])
 
-def training(size, fanout, mfg_read, train_, model, batch_size, mini_batch, epoch,):
+
+def training(
+    size,
+    fanout,
+    mfg_read,
+    train_,
+    model,
+    batch_size,
+    mini_batch,
+    epoch,
+):
     file = open("../results/hybrid_breakdown.txt", "a")
     file.write(f"\nTraining process launched: {time.time()} \n")
     start = time.time()
@@ -188,51 +213,69 @@ def training(size, fanout, mfg_read, train_, model, batch_size, mini_batch, epoc
         s1 = time.time()
         for layer in range(len(fanout)):
             if layer == 0:
-                block, input_nodes = dgl.hetero_from_gpu_shared_memory(array_gpu, offset_gpu_read, 0)
+                block, input_nodes = dgl.hetero_from_gpu_shared_memory(
+                    array_gpu, offset_gpu_read, 0
+                )
             elif layer == len(fanout) - 1:
-                block, output_nodes = dgl.hetero_from_gpu_shared_memory(array_gpu, offset_gpu_read, 0)
+                block, output_nodes = dgl.hetero_from_gpu_shared_memory(
+                    array_gpu, offset_gpu_read, 0
+                )
             else:
-                block, _ = dgl.hetero_from_gpu_shared_memory(array_gpu, offset_gpu_read, -1)
+                block, _ = dgl.hetero_from_gpu_shared_memory(
+                    array_gpu, offset_gpu_read, -1
+                )
             # print(block._graph)
             blocks.append(block)
         blocks[0].srcdata["_ID"] = input_nodes[0]
         blocks[-1].dstdata["_ID"] = output_nodes[0]
         deque += time.time() - s1
-        x = ggg_train_dataloader._cgg_on_demand("feat", "_N", blocks[0].srcdata["_ID"])
-        y = ggg_train_dataloader._cgg_on_demand("label", "_N", blocks[-1].dstdata["_ID"]) 
+        x = ggg_train_dataloader._cgg_on_demand(
+            "feat", "_N", blocks[0].srcdata["_ID"]
+        )
+        y = ggg_train_dataloader._cgg_on_demand(
+            "label", "_N", blocks[-1].dstdata["_ID"]
+        )
         print("Consumer:: ", mb)
         y_hat = model(blocks, x)
         loss = F.cross_entropy(y_hat, y)
         opt.zero_grad()
         loss.backward()
         opt.step()
-        print("***********",mb)
+        print("***********", mb)
     end = time.time()
     total_loss = 0
     print("_________________________")
     for it, (input_nodes, output_nodes, blocks) in enumerate(
-            ggg_train_dataloader
-        ):
-            start1 = time.time()
-            
-            x = blocks[0].srcdata["feat"]
-            y = blocks[-1].dstdata["label"]
+        ggg_train_dataloader
+    ):
+        start1 = time.time()
 
-            end1 = time.time()
-            y_hat = model(blocks, x)
-            loss = F.cross_entropy(y_hat, y)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            total_loss += loss.item()
-            end2 = time.time()
-            
+        x = blocks[0].srcdata["feat"]
+        y = blocks[-1].dstdata["label"]
+
+        end1 = time.time()
+        y_hat = model(blocks, x)
+        loss = F.cross_entropy(y_hat, y)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        total_loss += loss.item()
+        end2 = time.time()
+
     print("GGG done")
     train_.set()
-    file.write(f"GGG time: {time.time() - end}s, CGG time:{end - s}s GPU read time:{deque:.4f}s\n")
+    file.write(
+        f"GGG time: {time.time() - end}s, CGG time:{end - s}s GPU read time:{deque:.4f}s\n"
+    )
     file.close()
 
-def to_gpu_shared_memory(blocks, array_gpu, offset_gpu, fanout,):
+
+def to_gpu_shared_memory(
+    blocks,
+    array_gpu,
+    offset_gpu,
+    fanout,
+):
     layer = 0
     # gpu_blocks.append(blocks) # TODO: size = max mini_batches that can be hosted on GPU.
     for block in blocks:
@@ -240,22 +283,37 @@ def to_gpu_shared_memory(blocks, array_gpu, offset_gpu, fanout,):
             for nframe in block._node_frames:
                 if nframe:
                     # gpu_blocks.append(
-                        block.shared_memory_gpu(array_gpu, offset_gpu, nframe['_ID'], 0)
-                        # )
+                    block.shared_memory_gpu(
+                        array_gpu, offset_gpu, nframe["_ID"], 0
+                    )
+                    # )
         elif layer == len(fanout) - 1:
             for nframe in block._node_frames:
                 if nframe:
                     # gpu_blocks.append(
-                        block.shared_memory_gpu(array_gpu, offset_gpu, nframe['_ID'], 0)
-                        # )
+                    block.shared_memory_gpu(
+                        array_gpu, offset_gpu, nframe["_ID"], 0
+                    )
+                    # )
         else:
             # gpu_blocks.append(
-                block.shared_memory_gpu(array_gpu, offset_gpu, torch.empty(0), -1)
-                # )
+            block.shared_memory_gpu(array_gpu, offset_gpu, torch.empty(0), -1)
+            # )
         layer += 1
 
-def mfg_transfer(mfg, sampling, tail, head, mini_batch, 
-                 size, fanout, mfg_read, train_, edge_dir):
+
+def mfg_transfer(
+    mfg,
+    sampling,
+    tail,
+    head,
+    mini_batch,
+    size,
+    fanout,
+    mfg_read,
+    train_,
+    edge_dir,
+):
     file = open("../results/hybrid_breakdown.txt", "a")
     # start_perf(mini_batch, os.getpid(), e)
     file.write(f"MFG transfer launched: {time.time()} \n")
@@ -280,12 +338,18 @@ def mfg_transfer(mfg, sampling, tail, head, mini_batch,
             blocks = []
             for layer in range(len(fanout)):
                 if layer == 0:
-                    block, output_nodes = dgl.hetero_from_shared_memory_hybrid(array, 0, read_offset, edge_dir)
+                    block, output_nodes = dgl.hetero_from_shared_memory_hybrid(
+                        array, 0, read_offset, edge_dir
+                    )
                 elif layer == len(fanout) - 1:
-                    block, input_nodes = dgl.hetero_from_shared_memory_hybrid(array, 0, read_offset, edge_dir)
+                    block, input_nodes = dgl.hetero_from_shared_memory_hybrid(
+                        array, 0, read_offset, edge_dir
+                    )
                 else:
-                    block, _ = dgl.hetero_from_shared_memory_hybrid(array, layer, read_offset, edge_dir)
-                
+                    block, _ = dgl.hetero_from_shared_memory_hybrid(
+                        array, layer, read_offset, edge_dir
+                    )
+
                 blocks.insert(0, block)
             blocks[0].srcdata["_ID"] = input_nodes[0]
             blocks[-1].dstdata["_ID"] = output_nodes[0]
@@ -294,17 +358,18 @@ def mfg_transfer(mfg, sampling, tail, head, mini_batch,
             # Transfer to GPU, TODO: Create separate stream and function for transfer
             s1 = time.time()
             blocks = recursive_apply(
-                    blocks, lambda x: x.to("cuda", non_blocking=True))
+                blocks, lambda x: x.to("cuda", non_blocking=True)
+            )
             transfer_time += time.time() - s1
 
             # Using cudaIPC to buffer MFG's in GPU.
             s1 = time.time()
-            gpu_blocks.append(blocks) 
+            gpu_blocks.append(blocks)
             to_gpu_shared_memory(blocks, array_gpu, offset_gpu, fanout)
             gpu_enqueue += time.time() - s1
 
             tail.value = 0 if tail.value == -1 else tail.value
-            tail.value += 1 # % mini_batch
+            tail.value += 1  # % mini_batch
             s1 = time.time()
             if (tail.value % mini_batch) == 0:
                 # file.write(f"MFG transfer done for epoch {tail.value / mini_batch} : {time.time()}\n")
@@ -312,14 +377,17 @@ def mfg_transfer(mfg, sampling, tail, head, mini_batch,
                 reset_shm(offset_gpu)
             reset_time += time.time() - s1
             # print("Transfer: ", head.value, tail.value, input_nodes[0].shape)
-            
+
         # print(f"Transfer {time.time()} : {time.time() - s: .4f}s")
     end = time.time()
     # stop_perf()
     mfg_read.set()
     train_.wait()
-    file.write(f"MFG Transfer E2E: {end - start:.4f}s, CPU Shared read: {read_time}s, Enqueue: {gpu_enqueue:.4f}s, TR: {transfer_time:.4f}s, {time.time()} \n")
+    file.write(
+        f"MFG Transfer E2E: {end - start:.4f}s, CPU Shared read: {read_time}s, Enqueue: {gpu_enqueue:.4f}s, TR: {transfer_time:.4f}s, {time.time()} \n"
+    )
     file.close()
+
 
 def train(file, args, model):
     # create sampler & dataloader
@@ -342,29 +410,54 @@ def train(file, args, model):
     st = time.time()
     print("Sharing memory: ", mini_batch)
     # start_perf(mini_batch, os.getpid(), args.epoch)
-    if hybrid_: 
+    if hybrid_:
         array = create_shmarray(size, args.madvise, "array", args.pin_mfg)
-        array_gpu = create_shmarray(size, args.madvise, "array_gpu", args.pin_mfg)
+        array_gpu = create_shmarray(
+            size, args.madvise, "array_gpu", args.pin_mfg
+        )
         offset = create_shmoffset(1024, "offset")
 
     print("Memory shared")
     create_time = time.time() - st
     train_ = torch.multiprocessing.Event()
-    mfg_read = torch.multiprocessing.Event()   
+    mfg_read = torch.multiprocessing.Event()
     train_.clear()
     mfg_read.clear()
     # mini_batch = 1
     sampler = NeighborSampler(
-        [15, 10, 5],  
+        [15, 10, 5],
     )
     file.write(f"Launching processes {time.time()} \n")
-    mfg_transfer_ = torch.multiprocessing.Process(target=mfg_transfer, args=( mfg, sampling, tail, head, 
-                                                    mini_batch, size, fanout, mfg_read, train_, sampler.edge_dir))
-    train_pr = torch.multiprocessing.Process(target=training, args=(size, fanout, mfg_read, train_,
-                                                                    model, args.batch_size, mini_batch, args.epoch))
+    mfg_transfer_ = torch.multiprocessing.Process(
+        target=mfg_transfer,
+        args=(
+            mfg,
+            sampling,
+            tail,
+            head,
+            mini_batch,
+            size,
+            fanout,
+            mfg_read,
+            train_,
+            sampler.edge_dir,
+        ),
+    )
+    train_pr = torch.multiprocessing.Process(
+        target=training,
+        args=(
+            size,
+            fanout,
+            mfg_read,
+            train_,
+            model,
+            args.batch_size,
+            mini_batch,
+            args.epoch,
+        ),
+    )
     mfg_transfer_.start()
     train_pr.start()
-    
 
     train_dataloader = DataLoader(
         g,
@@ -376,7 +469,7 @@ def train(file, args, model):
         shuffle=True,
         drop_last=False,
         num_workers=0,
-        use_prefetch_thread= True if args.prefetch_thread == 1 else False,
+        use_prefetch_thread=True if args.prefetch_thread == 1 else False,
         cgg=True,
     )
 
@@ -391,45 +484,50 @@ def train(file, args, model):
     for epoch in range(args.epoch):
         model.train()
         total_loss = 0
+
         start_ = time.time()
-        
-        if hybrid_: 
+
+        if hybrid_:
             reset_shm(offset)
 
         i = 0
         reset_time += time.time() - start_
-        for it, (_, _, b_) in enumerate(
-            train_dataloader
-        ):
+        for it, (_, _, b_) in enumerate(train_dataloader):
             start1 = time.time()
-            while tail.value != -1 and head.value % mini_batch < tail.value % mini_batch:
+            while (
+                tail.value != -1
+                and head.value % mini_batch < tail.value % mini_batch
+            ):
                 continue
             wait_time += time.time() - start1
-            head.value += 1 #% mini_batch
+            head.value += 1  # % mini_batch
             mfg.set()
-            
+
             start1 = time.time()
             while tail.value == -1 and head.value % mini_batch == 0:
                 continue
             wait_time += time.time() - start1
-                        
+
         # file.write(f"Epoch {epoch} : {time.time() - start_ - reset_time: .4f}s, {reset_time:.4f}s, {time.time()}\n")
     # mfg.set()
     # stop_perf()
     end = time.time()
     sampling.set()
     print("Sampling done")
-    file.write(f"Sampling time: {end - start - wait_time:.4f}s , Creating CPU shared memory: {create_time:.4f}s, Wait time: {wait_time:.4f}s, {time.time()}\n")
+    file.write(
+        f"Sampling time: {end - start - wait_time:.4f}s , Creating CPU shared memory: {create_time:.4f}s, Wait time: {wait_time:.4f}s, {time.time()}\n"
+    )
     mfg_transfer_.join()
     train_pr.join()
     # stop_perf()
     # file.close()
 
+
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method("spawn")
     args = get_args()
     print(f"Training in {args.mode} mode.")
-    
+
     file = open("../results/hybrid_breakdown.txt", "a")
 
     in_size, out_size = fetch_shapes()
@@ -442,6 +540,8 @@ if __name__ == "__main__":
     # for i in batch_size_:
     #     args.batch_size = i
     train(file, args, model)
-    file.write(f"Dataset {args.dataset}, Batch size {args.batch_size}, Hybrid {args.hybrid}, Epochs {args.epoch}\n")
-    
+    file.write(
+        f"Dataset {args.dataset}, Batch size {args.batch_size}, Hybrid {args.hybrid}, Epochs {args.epoch}\n"
+    )
+
     file.close()

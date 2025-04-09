@@ -92,6 +92,8 @@ def host_datas(e):
         val_idx = dataset.val_idx
         test_idx = dataset.test_idx
     g = dataset[0]
+    if args.dataset.startswith("ogb"):
+        g = dgl.add_self_loop(g)
     g.ndata["label"] = g.ndata["label"].type(torch.long)
 
     # Creating shared + pinned memory regions for graph formats {coo, csr, csc}, nfeat, labels, {train/val/test}_idx

@@ -214,6 +214,7 @@ def run_node_classification(
     model="sage",
     mfg_buffer_size=0,
     opt2=0,
+    ablation=0,
     # diff=0,
 ):
     """Run the node classification task."""
@@ -223,67 +224,57 @@ def run_node_classification(
         f"epochs {epoch} sampler {sampler} workers {workers} variant {variant} model {model} {Style.RESET_ALL}"
 
     )
-    log_file = f"./log/{file_name}_test.log"
+    log_file = f"./log/{file_name}.log"
     with open(log_file, "a") as f:
+        # Build the command first, so we can show it to the user
+        cmd = [
+            "python",
+            file_name,
+            "--epoch", str(epoch),
+            "--batch_size", str(batch_size),
+            "--mfg_size", str(mfg_size),
+            "--dataset", dataset,
+            "--cache_size", str(cache),
+            "--sampler", sampler,
+            "--workers", str(workers),
+            "--num_threads", str(num_threads),
+            "--variant", variant,
+            "--hid_size", str(hid_size),
+            "--diff", str(diff),
+            "--fan_out", fanout,
+            "--slack_test", str(slack_test),
+            "--nfeat_dim", str(nfeat_dim),
+            "--hybrid", str(hybrid),
+            "--model_type", model,
+            "--mfg_buffer_size", str(mfg_buffer_size),
+            "--opt", str(opt2),
+            "--ablation", str(ablation),
+        ]
+        
+        # Print the full command for debugging/record‐keeping
+        print("Executing command:", " ".join(cmd), flush=True)
+        
         process = subprocess.Popen(
-            [
-                "python",
-                file_name,
-                "--epoch",
-                str(epoch),
-                "--batch_size",
-                str(batch_size),
-                "--mfg_size",
-                str(mfg_size),
-                "--dataset",
-                dataset,
-                "--cache_size",
-                str(cache),
-                "--sampler",
-                sampler,
-                "--workers",
-                str(workers),
-                "--num_threads",
-                str(num_threads),
-                "--variant",
-                variant,
-                "--hid_size",
-                str(hid_size),
-                "--diff",
-                str(diff),
-                "--fan_out",
-                fanout,
-                "--slack_test",
-                str(slack_test),
-                "--nfeat_dim",
-                str(nfeat_dim),
-                "--hybrid",
-                str(hybrid),
-                "--model_type",
-                model,
-                "--mfg_buffer_size",
-                str(mfg_buffer_size),
-                "--opt",
-                str(opt2),
-               
-            ],
+            cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,      # merge stderr into stdout
+            bufsize=1,
+            universal_newlines=True,       # so we get text lines, not bytes
         )
-
-        # Capture output and write it to the log file
-        stdout, stderr = process.communicate()
-        f.write(stdout.decode())  # Write stdout to the log file
-        if stderr:
-            f.write("\n--- STDERR ---\n")
-            f.write(stderr.decode())  # Write stderr to the log file (if any)
-
-    if process.returncode == 0:
-        print(
+        # stream‐read line by line
+        for line in process.stdout:
+            f.write(line)               # each line already has its newline
+            f.flush()
+        process.stdout.close()
+        returncode = process.wait()    # wait for the process to exit
+        
+        if returncode != 0:
+            f.write(f"\nProcess exited with return code {returncode}\n")
+            f.flush()
+        else:
+            print(
             f"{Fore.LIGHTGREEN_EX}{file_name} completed successfully with batch size {batch_size}.{Style.RESET_ALL}"
         )
-    else:
-        print(f"Error during {file_name}: {stderr.decode()}")
 
 
 def release_dataset():
@@ -302,26 +293,31 @@ def clear_shared_memory():
 
 def main():
     args = get_args()
-    datasets = ["twitter"]
-    # datasets = ["friendster", "ogbn-papers100M", "twitter"] #, "igb-large"] #
+    datasets = ["igb-large"]
+    # datasets = ["friendster", "ogbn-papers100M", "twitter", "igb-large"] #
     # datasets = ["friendster", "ogbn-papers100M"]
     batch_sizes = [8192, 1024]
-    sampler_xxx = ["fns", ]
-    # sampler_xxx = ["shadow"] #, "lbr2", "shadow"]
+    # batch_sizes = [1024]
+    sampler_xxx = ["shadow"]
+    # sampler_xxx = ["fns", "lbr2", "shadow"]
     # sampler_hybrid = ["fns", "lbr2", "shadow"]
-    model_type = ["gcn"]
+    sampler_hybrid = ["shadow"]
+    model_type = ["sage", "gcn"]
+    # model_type = ["gcn"]
     hid_size_ = [256]
-    file_name_ = ["xxx_variants.py"]
-    # file_name_ = ["lbr_shm.py"]
+    
+    # file_name_ = ["xxx_variants.py"] #, "hybrid_shadow.py"] #"hybrid_ablation.py",
+    file_name_ = ["hybrid_shadow.py"]
     # threads_ = [1, 4, 16, 64]
     threads_ = [64]
-    workers_xxx = [8]
+    workers_xxx = [32]
     # workers_hybrid = [16, 4, 1]
     workers_hybrid = [64]
     # variants = ["c_vanilla",] 
-    variants = ["ccg", "cgg"] # Run only for 2 datasets, FR/PA
-    # cache_size = 12000000
-    cache_size = 0
+    variants = ["ccg", "ggg"] # Run only for 2 datasets, FR/PA
+    # varaints = ["c__", "g__", ]
+    cache_size = 12000000
+    # cache_size = 0
     fanout_ = ["15,10,5"]
     opt2 = [0]
 
@@ -482,12 +478,12 @@ def main():
                 if file_name.startswith("xxx") or file_name.startswith("lbr"):
                     for hid_size in hid_size_:
                         for variant in variants:
-                            epochs = 100
+                            epochs = 3
                             sampler_xxx_ = sampler_xxx
                             
                             for s in sampler_xxx_:
-                                # if s == "shadow" and _dataset == "twitter":
-                                #     continue
+                                if s == "shadow" and variant == "ggg":
+                                    continue
                                 model_types_ = model_types #if s == "lbr2" else ["gcn"]
                                 if s == "fns":
                                     
@@ -537,7 +533,17 @@ def main():
                             # model_types = ["sage"] if _dataset == "ogbn-papers100M" else model_type
                             # threads__ = [64] if s == "lbr2" else threads_
                             # workers_hybrid_ = [0] if s == "fns" else workers_hybrid
-                            opt2 = [1] if s == "lbr2" and ((_dataset == "ogbn-papers100M" and batch_size == 1024) or _dataset.startswith("igb")) else [0]
+                            if file_name.startswith("hybrid_shadow"):
+                                # opt2 = [1] if s == "lbr2" and ((_dataset == "ogbn-papers100M" and batch_size == 1024) or _dataset.startswith("igb")) else [0]
+                                opt2 = [0]
+                                workers_hybrid = [64]
+                                ablation = 0
+                            else:
+                                workers_hybrid = [32]
+                                opt2 = [0]
+                                ablation = 1
+
+                            epochs = 20 # if _dataset.startswith("igb") else 30
                             for model in model_types:
                                 for threads in threads_:
                                     for fanout in fanout_:
@@ -546,7 +552,7 @@ def main():
                                                 run_node_classification(
                                                     batch_size,
                                                     file_name,
-                                                    100,
+                                                    epochs,
                                                     args.mfg_size,
                                                     _dataset,
                                                     cache_size,
@@ -561,7 +567,8 @@ def main():
                                                     nfeat_dim=args.nfeat_dim,
                                                     model=model,
                                                     mfg_buffer_size=args.mfg_buffer_size,
-                                                    opt2=opt2_
+                                                    opt2=opt2_,
+                                                    ablation=ablation,
                                                 )
                 if args.mps_split:
                     mps_quit()

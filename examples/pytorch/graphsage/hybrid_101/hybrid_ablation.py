@@ -176,7 +176,13 @@ def run_gg(
             #         gpu_slack,
             #     ]
             # )
-        
+            # acc = evaluate(model, g, val_dataloader, model.out_size)
+            # acc_file.write(
+            #     "Epoch {:05d} | Loss {:.4f} | Accuracy {:.4f} \n".format(
+            #         epoch.value, total_loss / mini_batch, acc.item()
+            #     )
+            # )
+            # valid_accum.append(acc.item())
             # This condition can be skipped since ET > MFG
             if tail_gpu.value >= head_gpu.value:
                 break
@@ -277,14 +283,6 @@ def run_gg(
                 break
             # t.elapsed_secs = 0
         inner_loop_time += time.time() - s_
-        # if mb == 0:
-        #     acc = evaluate(model, g, val_dataloader, model.out_size)
-        #     acc_file.write(
-        #         "Epoch {:05d} | Loss {:.4f} | Accuracy {:.4f} \n".format(
-        #             epoch.value, total_loss / mini_batch, acc.item()
-        #         )
-        #     )
-        #     valid_accum.append(acc.item())
         # print("GG: ", tail_gpu.value, head_gpu.value, epoch.value, flush=True)
 
     outer_loop_time += time.time() - _s_
@@ -525,6 +523,7 @@ def deque_cpu_mfgs(
             break
         try:
             idx, data = cpu_shared_queue.get(block=False)
+            # print(data)
         except Empty:
             continue
         local_mfg_buffer.put((data[1].shape[0], data[2]))
@@ -562,7 +561,7 @@ def deque_cpu_mfgs(
 
     # print("Exiting deque: ", head_gpu.value, tail_gpu.value, local_mfg_buffer.qsize(), consumed_mfgs.value, flush=True)
 
-
+# Logic for MT based samplers
 def mfg_transfer_worker(
     mfg,
     sampling,
@@ -587,11 +586,12 @@ def mfg_transfer_worker(
     ggg_epochs,
     epoch,
     sampler,
+    gpu_buff_full,
 ):
     nvmlInit()
     if enable_affinity:
         set_core_affinity(mfg_core)
-    file = open(f"../results/hybrid/lbr/pa_igb_test.txt.txt", "a")
+    file = open(f"../results/hybrid/lbr/ablation.txt", "a")
 
     # start_perf(mini_batch, os.getpid(), e)
     # file.write(f"MFG transfer launched: {time.time()} \n")
@@ -691,6 +691,7 @@ def mfg_transfer_worker(
             # print("Producer GPU: ", head_gpu.value, end=" ", flush=True) # head_gpu.value % mini_batch, head_gpu.value / mini_batch, time.time())
             # print_offset(offset_gpu_write)
             head_gpu.value += 1
+            gpu_buff_full.set()
             # print("MFG trnsferred ", head_gpu.value, sizes)
             mfg_size_array[head_gpu.value % mfg_buffer_size] = sizes
             # while tail_gpu.value == 0 and head_gpu.value % mini_batch == 0:
@@ -749,7 +750,7 @@ def mfg_transfer_worker(
     file.close()
     nvmlShutdown()
 
-
+# Logic for MP based samplers
 def mfg_transfer_worker_lbr(
     mfg,
     sampling,
@@ -775,11 +776,12 @@ def mfg_transfer_worker_lbr(
     opt2,
     sampler,
     gpu_buff_full,
+    ablation=None,
 ):
     nvmlInit()
     if enable_affinity:
         set_core_affinity(mfg_core)
-    file = open(f"../results/hybrid/lbr/pa_igb_test.txt.txt", "a")
+    file = open(f"../results/hybrid/lbr/ablation.txt", "a")
 
     # start_perf(mini_batch, os.getpid(), e)
     # file.write(f"MFG transfer launched: {time.time()} \n")
@@ -819,7 +821,7 @@ def mfg_transfer_worker_lbr(
     total_ovhd = [0]
     launch_time = time.time()
     total_epochs = epoch.value
-    local_mfg_buffer = Queue((int)(mini_batch * 0.75))
+    local_mfg_buffer = Queue((int)(mini_batch ))
     local_buffer_enque = [0]
     enque_gpu_mfgs_args_list = []
     activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA,]
@@ -835,6 +837,7 @@ def mfg_transfer_worker_lbr(
         s1 = time.time()
         try:
             idx, data = cpu_shared_queue.get(block=False)
+            # print(data)
             ovhd = time.time() - s1
             total_ovhd[0] += ovhd
         except Empty:
@@ -1027,13 +1030,13 @@ def profile_deque_cpu(
             count.value += 1
             # blocks = blocks if not hasattr(blocks, '__len__') else blocks[2]
             blocks = blocks[2]
+            # print(blocks)
             mfg_size_ += fetch_mfg_size(blocks)
             ovhd += time.time() - s
             with util.Timer() as t:
                 blocks = transfer_mfg_gpu(torch.cuda.current_stream(), blocks)
             mfg_timer += t.elapsed_secs
             
-
     print("Done profiling Deque")
     t_cpu_deque.value = ovhd / 2
     t_mfg_transfer.value = mfg_timer / 2
@@ -1053,7 +1056,7 @@ def profile_preSC(args, sampler, train_dataloader, mini_batch, count=0):
     cpu_sampling = mfg_size = mfg_timer = ovhd = 0
 
     # warm-up
-    if args.sampler == "fns" and sampler.hybrid:
+    if (args.sampler == "fns" and sampler.hybrid) or args.ablation:
         for it, (_, _, b_) in enumerate(train_dataloader):
             if it == 10:
                 break
@@ -1067,11 +1070,25 @@ def profile_preSC(args, sampler, train_dataloader, mini_batch, count=0):
             for it, (_, _, block) in enumerate(train_dataloader):
                 s = time.time()
                 mfg_size += fetch_mfg_size(block)
+                # print(it, mfg_size/(1024**3))
                 ovhd += time.time() - s
                 with util.Timer() as t:
                     block = transfer_mfg_gpu(torch.cuda.current_stream(), block)
                 mfg_timer += t.elapsed_secs
             cpu_sampling += time.time() - start
+            
+        elif args.ablation: #args.sampler == "lbr2" and
+            start = time.time()
+            for it, (_, _, block) in enumerate(train_dataloader):
+                s = time.time()
+                mfg_size += fetch_mfg_size(block)
+                # print(it, mfg_size/(1024**3))
+                ovhd += time.time() - s
+                with util.Timer() as t:
+                    block = transfer_mfg_gpu(torch.cuda.current_stream(), block)
+                mfg_timer += t.elapsed_secs
+            cpu_sampling += time.time() - start
+            # print("PreSC CPU sampling:", cpu_sampling)
         else:
             while train_dataloader.cpu_shared_queue.qsize() != 0:
                 continue
@@ -1090,7 +1107,7 @@ def profile_preSC(args, sampler, train_dataloader, mini_batch, count=0):
             print("PreSC CPU sampling:", cpu_sampling)
 
     print("Done profiling PreSC")
-    if args.sampler == "fns":
+    if args.sampler == "fns" or args.ablation:
         args.mfg_size = (int)(mfg_size / 2)
         args.mfg_transfer = mfg_timer / 2
         args.t_sample = (cpu_sampling - mfg_timer - ovhd) / 2    
@@ -1210,7 +1227,7 @@ def sampling_worker(
 ):
 
     set_num_threads(num_threads)
-    file = open(f"../results/hybrid/lbr/pa_igb_test.txt.txt", "a")
+    file = open(f"../results/hybrid/lbr/ablation.txt", "a")
     # file.write(f"Sampling process launched: {time.time()} \n")
     launch_time = time.time()
     reset_time = wait_time = 0
@@ -1340,9 +1357,10 @@ def sampling_worker_lbr(
     cpu_shared_queue,
     consumed_mfgs,
     ggg_epochs,
+    ablation=None,
 ):
 
-    file = open(f"../results/hybrid/lbr/pa_igb_test.txt.txt", "a")
+    file = open(f"../results/hybrid/lbr/ablation.txt", "a")
     # file.write(f"Sampling process launched: {time.time()} \n")
     launch_time = time.time()
     reset_time = wait_time = 0
@@ -1382,25 +1400,46 @@ def sampling_worker_lbr(
             fan_out,
         )
 
-    train_dataloader = DataLoader(
-        g,
-        train_idx,
-        sampler,
-        device=torch.device("cpu"),
-        batch_size=batch_size,
-        shuffle=True,
-        drop_last=False,
-        num_workers=workers,
-        use_uva=False,
-        persistent_workers=True if workers > 0 else False,
-        cpu_shared_queue=cpu_shared_queue,
-        pin_prefetcher=False,
-        hybrid=True,
-        hybrid_wrapper=True,
-        # skip_mfg=True,
-        # cgg_on_demand=True,
-        # gather_pin_only=True,
-    )
+    if not ablation:
+        train_dataloader = DataLoader(
+            g,
+            train_idx,
+            sampler,
+            device=torch.device("cpu"),
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=False,
+            num_workers=workers,
+            use_uva=False,
+            persistent_workers=True if workers > 0 else False,
+            cpu_shared_queue=cpu_shared_queue,
+            pin_prefetcher=False,
+            hybrid=True,
+            hybrid_wrapper=True,
+            # skip_mfg=True,
+            # cgg_on_demand=True,
+            # gather_pin_only=True,
+        )
+    else:
+        train_dataloader = DataLoader(
+            g,
+            train_idx,
+            sampler,
+            device=torch.device("cpu"),
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=False,
+            num_workers=workers,
+            use_uva=False,
+            persistent_workers=True if workers > 0 else False,
+            # cpu_shared_queue=cpu_shared_queue,
+            pin_prefetcher=False,
+            # hybrid=True,
+            hybrid_wrapper=True,
+            # skip_mfg=True,
+            # cgg_on_demand=True,
+            # gather_pin_only=True,
+        )
 
     # warmup the dataloader
     iterator_obj = []
@@ -1409,37 +1448,49 @@ def sampling_worker_lbr(
     sampled_epochs = 0
     iterations = 0
     sampling_wait_time = 0
+    enqueue_timer = 0
     start = time.time()
     while epochs - sampled_epochs - ggg_epochs.value > 0:
-        # Current prefetch_depth is 2, hence during init (2 * num_workers) mini_batches are enqueued for sampling.
-        iterator_obj = train_dataloader.iterate()
-        # iterations += 8
-        # print(iterator_obj._tasks_outstanding)
-        # while cpu_shared_queue.qsize() < 1:
-        #     mfg.clear()
-        #     continue
-        # mfg.set()
+        if not ablation:
+            # Current prefetch_depth is 2, hence during init (2 * num_workers) mini_batches are enqueued for sampling.
+            iterator_obj = train_dataloader.iterate()
+            # iterations += 8
+            # print(iterator_obj._tasks_outstanding)
+            # while cpu_shared_queue.qsize() < 1:
+            #     mfg.clear()
+            #     continue
+            # mfg.set()
 
-        # This condition enqueues all mini_batch'es to worker's queue
-        while iterator_obj._tasks_outstanding < mini_batch:  # + args.workers
-            iterator_obj.fetch_next()
+            # This condition enqueues all mini_batch'es to worker's queue
+            while iterator_obj._tasks_outstanding < mini_batch:  # + args.workers
+                iterator_obj.fetch_next()
 
-        iterations += iterator_obj._tasks_outstanding
+            iterations += iterator_obj._tasks_outstanding
 
-        # print(f"Sampling: {consumed_mfgs.value}, {cpu_shared_queue.qsize()}")
-        # We wait until all the workers have produced samples.
-        while (consumed_mfgs.value + cpu_shared_queue.qsize()) != iterations:
-            # while cpu_shared_queue.qsize() != iterations:
-            # print(f"{consumed_mfgs.value},{cpu_shared_queue.qsize()}\n")
-            s = time.time()
-            while cpu_shared_queue.qsize() == cpu_shared_queue._maxsize:
+            # print(f"Sampling: {consumed_mfgs.value}, {cpu_shared_queue.qsize()}")
+            # We wait until all the workers have produced samples.
+            while (consumed_mfgs.value + cpu_shared_queue.qsize()) != iterations:
+                # while cpu_shared_queue.qsize() != iterations:
+                # print(f"{consumed_mfgs.value},{cpu_shared_queue.qsize()}\n")
+                s = time.time()
+                while cpu_shared_queue.qsize() == cpu_shared_queue._maxsize:
+                    continue
+                sampling_wait_time += time.time() - s
+            # print(iterator_obj._tasks_outstanding)
+            # print(
+            #     f"Sampling: {consumed_mfgs.value}, {cpu_shared_queue.qsize()}, {iterator_obj._tasks_outstanding}", flush=True
+            # )
+            sampled_epochs += 1
+        else:
+            for it, (input_nodes, output_nodes, blocks) in enumerate(train_dataloader):
+                enqueue_timer -= time.time()
+                cpu_shared_queue.put((it, [input_nodes, output_nodes, blocks]))
+                enqueue_timer += time.time()
+                # print(blocks)
+                iterations += 1
                 continue
-            sampling_wait_time += time.time() - s
-        # print(iterator_obj._tasks_outstanding)
-        # print(
-        #     f"Sampling: {consumed_mfgs.value}, {cpu_shared_queue.qsize()}, {iterator_obj._tasks_outstanding}", flush=True
-        # )
-        sampled_epochs += 1
+            
+            sampled_epochs += 1
 
     end = time.time()
     sampling.set()
@@ -1447,20 +1498,23 @@ def sampling_worker_lbr(
     mfg.wait()
     while cpu_shared_queue.qsize() != 0:
         residual = cpu_shared_queue.get()
-    iterator_obj._shutdown_workers()
+    
+    if not ablation:
+        iterator_obj._shutdown_workers()
     print("Sampling PP", flush=True)
     end_ts = time.time()
     sampling_time = end - start
     epochs = iterations / mini_batch
     residual = iterations % mini_batch
     hybrid_sampling_timer.value = (
-        (sampling_time - sampling_wait_time) / iterations
+        (sampling_time - sampling_wait_time - enqueue_timer) / iterations
     ) * mini_batch
     # Pair each header with its corresponding value
     table_data = [
         ["Sampler worker launch timestamp", launch_time],
         ["Sampling time", hybrid_sampling_timer.value],
         ["Sampling stalls", sampling_wait_time],
+        ["Enqueue time", enqueue_timer],
         ["Epochs", epochs],
         ["End TS", end],
     ]
@@ -1620,24 +1674,43 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
             use_alternate_streams=False,
         )
     else:
-        train_dataloader = DataLoader(
+        args.workers = (int)(os.cpu_count() / 2) if args.workers == 0 else args.workers
+        print(args.workers)
+        if not args.ablation:
+            train_dataloader = DataLoader(
+                g,
+                train_idx,
+                sampler,
+                device=torch.device("cpu"),
+                skip_mfg=True,
+                batch_size=args.batch_size,
+                shuffle=True,
+                drop_last=False,
+                num_workers=args.workers,
+                persistent_workers=True if args.workers > 0 else False,
+                use_prefetch_thread=True if args.prefetch_thread == 1 else False,
+                use_alternate_streams=False,
+                cpu_shared_queue=cpu_shared_queue_presc,
+                hybrid=True,
+                hybrid_wrapper=True,
+                # pin_prefetcher=F,
+            )
+        else:
+            train_dataloader = DataLoader(
             g,
             train_idx,
             sampler,
             device=torch.device("cpu"),
-            skip_mfg=True,
             batch_size=args.batch_size,
             shuffle=True,
             drop_last=False,
             num_workers=args.workers,
+            use_uva=False,
             persistent_workers=True if args.workers > 0 else False,
-            use_prefetch_thread=True if args.prefetch_thread == 1 else False,
-            use_alternate_streams=False,
-            cpu_shared_queue=cpu_shared_queue_presc,
-            hybrid=True,
+            pin_prefetcher=False,
+            use_prefetch_thread=False,
             hybrid_wrapper=True,
-            # pin_prefetcher=F,
-        )
+        )   
 
     ggg_dataloader = DataLoader(
         g,
@@ -1691,23 +1764,23 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
     set_num_threads(args.num_threads)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=5e-4)
     model.to(torch.device("cuda"))
-    if args.sampler == "fns":
+    if args.sampler == "fns" or args.ablation:
         profile_preSC(args, sampler, train_dataloader, mini_batch)
     else:
-        deque_cpu = torch.multiprocessing.Process(
-            target=profile_deque_cpu,
-            args=(
-                cpu_shared_queue_presc,
-                mini_batch,
-                count,
-                t_cpu_deque,
-                t_mfg_transfer,
-                mfg_size,
-            ),
-        )
-        deque_cpu.start()
+        # deque_cpu = torch.multiprocessing.Process(
+        #     target=profile_deque_cpu,
+        #     args=(
+        #         cpu_shared_queue_presc,
+        #         mini_batch,
+        #         count,
+        #         t_cpu_deque,
+        #         t_mfg_transfer,
+        #         mfg_size,
+        #     ),
+        # )
+        # deque_cpu.start()
         profile_preSC(args, sampler, train_dataloader, mini_batch, count)
-        deque_cpu.join()
+        # deque_cpu.join()
         args.mfg_size = mfg_size.value
         args.mfg_transfer = t_mfg_transfer.value
         args.t_cpu_deque = t_cpu_deque.value
@@ -1804,7 +1877,7 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
             ]
         )
 
-    print("PID for main; ", os.getpid())
+    # print("PID for main; ", os.getpid())
     # input("Continue?")
     # Print as a table
     print(
@@ -1816,6 +1889,7 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
             floatfmt=".4f",
         )
     )
+    # return
     file.write(
         tabulate(
             data,
@@ -1830,7 +1904,7 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
         # TODO: Based on cpu sampling and et times, specifically run GGG or CGG.
         return
     
-    # return
+    return
     if args.mps_split != 0:
         launch_mps(args.mps_split)
     if args.sampler == "fns":
@@ -1860,6 +1934,7 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
                 ggg_epochs,
                 epoch_,
                 args.sampler,
+                gpu_buff_full,
             ),
         )
 
@@ -1911,6 +1986,7 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
                 args.opt,
                 args.sampler,
                 gpu_buff_full,
+                args.ablation,
             ),
         )
 
@@ -1929,10 +2005,13 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
                 cpu_shared_queue,
                 consumed_mfgs,
                 ggg_epochs,
+                args.ablation,
             ),
         )
     sampling_worker_.start()
     mfg_transfer_.start()
+    # sampling_worker_.join()
+    # return
     # sampling_worker_.join()
     # mfg_transfer_.join()
 
@@ -1952,8 +2031,8 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
     data1 = []
     data_mfg = []
     valid_accum = []
-    file1 = open(f"../results/accuracy/hybrid_{args.dataset}_{args.sampler}_{args.model_type}_{args.batch_size}.txt", "a+")
-    file1.write(f"{timestamp} \n")
+    # file1 = open(f"../results/hybrid_{args.dataset}_{args.sampler}_{args.model_type}_{args.batch_size}.txt", "a+")
+    # file1.write(f"{timestamp} \n")
     while epoch_.value > 0:
         total_loss = 0
         start = time.time()
@@ -1984,7 +2063,7 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
             batch_size=args.batch_size,
             residual_size=calculate_residual_size(args, mini_batch),
             val_dataloader = val_dataloader,
-            acc_file = file1,
+            # acc_file = file1,
             valid_accum=valid_accum,
         )
         cgg_time += time.time() - start
@@ -2002,11 +2081,11 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
         start = time.time()
         total_loss = run_ggg(ggg_dataloader, model, opt)
         # time.sleep(100)
-        ggg_time_epoch = time.time() - start
-        ggg_time += ggg_time_epoch
+        g = time.time() - start
+        ggg_time += g
         epoch_.value -= 1
         ggg_epochs.value += 1
-        data1.append([time.time(), "GGG", 0, 0, 0, 0, ggg_time_epoch])
+        data1.append([time.time(), "GGG", 0, 0, 0, 0, g])
         # file.write(f"GGG {epoch_.value} : {ggg_time:.4f}s, {time.time()}\n") # {ggg_timer.elapsed_secs},
         print("GGG done:", ggg_time, flush=True)
     train_.set()
@@ -2058,7 +2137,7 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
     )
     print("Training done", flush=True)
     file.close()
-    file1.close()
+    # file1.close()
     sampling_worker_.join()
     mfg_transfer_.join()
     cpu_shared_queue.close()
@@ -2071,16 +2150,16 @@ def main_worker(file, args, model, train_idx, val_idx, test_idx, g, timestamp):
     # free_gpu_mem.join()
     # stop_perf()
     # file.close()
-    torch.save(model.state_dict(), f"../results/model/hybrid_{args.dataset}_{args.sampler}_{args.model_type}_{args.batch_size}.pth")
+    # torch.save(model.state_dict(), f"../results/model/hybrid_{args.dataset}_{args.sampler}_{args.model_type}_{args.batch_size}.pth")
 
 
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method("spawn")
+    torch.multiprocessing.set_start_method("spawn", force=True)
     # torch.multiprocessing.set_sharing_strategy('file_system')
     args = get_args()
     print(f"Training in {args.mode} mode.")
 
-    file = open(f"../results/hybrid/lbr/pa_igb_test.txt.txt", "a")
+    file = open(f"../results/hybrid/lbr/ablation.txt", "a")
 
     # if args.dataset == "friendster":
     #     args.nfeat_dim = 256

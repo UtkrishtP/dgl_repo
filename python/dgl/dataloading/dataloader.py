@@ -859,7 +859,12 @@ class CollateWrapper(object):
         return recursive_apply(batch, remove_parent_storage_columns, self.g)
 
 import sys
-sys.path.append('/media/utkrisht/deepgraph')
+
+# Add the path to the directory containing load_dataset.py
+deepgraph_root = os.environ.get("DEEPGRAPH_ROOT")
+if not deepgraph_root:
+    raise RuntimeError("Please set $DEEPGRAPH_ROOT to your deepgraph checkout")
+sys.path.insert(0, os.path.join(deepgraph_root))
 from examples.pytorch.graphsage.hybrid_101.fetch_g import fetch_all
 
 class CollateWrapperHybrid(object):
